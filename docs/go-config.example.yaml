@@ -1,0 +1,79 @@
+# chatgpt2api-go 单操作员配置示例
+# 参考 CPA 的接入与认证结构，正式配置不要提交到 Git。
+
+# 空字符串同时绑定 IPv4/IPv6；127.0.0.1 或 localhost 仅允许本机访问。
+host: "127.0.0.1"
+port: 3000
+public-base-url: ""
+
+# 浏览器跨域白名单。星号只匹配子域名，不匹配主域名本身。
+cors:
+  allowed-origins:
+    - "https://5ixf.com"
+    - "https://www.5ixf.com"
+    - "https://*.5ixf.com"
+    - "https://isancha.com"
+    - "https://www.isancha.com"
+    - "https://*.isancha.com"
+
+remote-management:
+  # 支持 bcrypt 哈希；明文仅用于首次启动，启动后只保留内存哈希。
+  # 留空会关闭全部管理接口并返回 404。
+  secret-key: "$2a$10$REPLACE_WITH_BCRYPT_HASH"
+
+# 仅供客户端调用 /v1/* 使用，不能访问管理接口。
+# 明文 key 会在首次启动时自动转换为 key-hash；请先保存好原 Key。
+api-keys:
+  - name: default
+    key: "sk-REPLACE_WITH_A_RANDOM_CLIENT_KEY"
+    enabled: true
+
+# 相对路径按配置文件所在目录解析。
+# 上游账号凭据目录。账号数据本身可以放 SQLite，目录用于导入和导出文件。
+auth-dir: "./data/auth"
+data-dir: "./data"
+
+# 内置浏览器 Solver，无需部署第二个进程。
+sentinel:
+  # 留空自动查找 Chromium、Chrome 或 Edge。
+  browser-path: ""
+  timezone: ""
+  headless: true
+  no-sandbox: true
+  refresh-minutes: 30
+  navigate-timeout-seconds: 60
+  solve-timeout-seconds: 120
+
+debug: false
+usage-statistics-enabled: true
+refresh-interval-minutes: 30
+logging-to-file: false
+# 同时用于上游请求和内置 Solver 浏览器，支持 http/https/socks5。
+proxy-url: ""
+
+# 图片任务与存储
+image:
+  retention-days: 7
+  storage: "local"
+  account-concurrency: 1
+  poll-timeout-seconds: 120
+  poll-interval-seconds: 10
+  url-response-by-default: true
+  thumbnail-on-demand: true
+
+# 低配服务器默认值：先保证稳定，再按实测提高。
+performance:
+  image-workers: 1
+  parallel-generation: false
+  account-refresh-workers: 1
+  max-image-bytes: 20971520
+  text-cache-entries: 0
+  metrics-mode: "light"
+
+# 账号额度耗尽后的调度行为
+quota-exceeded:
+  switch-account: true
+  switch-model: false
+
+# 可选兼容配置
+openai-compatibility: []

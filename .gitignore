@@ -26,6 +26,11 @@ docker-compose-local.yml
 *.sqlite
 *.sqlite3
 
+# Go build and runtime artifacts
+bin/
+config.yaml
+*.log
+
 # Git cache
 git_cache/
 

@@ -1,0 +1,27 @@
+[Unit]
+Description=chatgpt2api-go
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=chatgpt2api
+Group=chatgpt2api
+WorkingDirectory=/var/lib/chatgpt2api
+StateDirectory=chatgpt2api
+ExecStart=/opt/chatgpt2api/chatgpt2api -config /etc/chatgpt2api/config.yaml
+Restart=on-failure
+RestartSec=5
+Environment=GOMEMLIMIT=200MiB
+Environment=GOGC=75
+LimitNOFILE=65536
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/chatgpt2api
+MemoryMax=1000M
+
+[Install]
+WantedBy=multi-user.target

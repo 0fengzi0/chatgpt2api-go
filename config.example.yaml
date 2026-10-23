@@ -1,0 +1,74 @@
+# chatgpt2api-go example. Copy to config.yaml and edit.
+# config.yaml, data/, bin/ are intentionally ignored by Git.
+
+host: "127.0.0.1"
+port: 3000
+provider-base-url: "https://chatgpt.com"
+public-base-url: ""          # optional, e.g. https://api.example.com
+
+cors:
+  allowed-origins:
+    - "https://5ixf.com"
+    - "https://www.5ixf.com"
+    - "https://*.5ixf.com"
+    - "https://isancha.com"
+    - "https://www.isancha.com"
+    - "https://*.isancha.com"
+
+# The Go service starts its own browser-backed Sentinel solver.
+sentinel:
+  # Empty means auto-detect Chromium, Chrome, or Edge.
+  browser-path: ""
+  timezone: ""
+  headless: true
+  no-sandbox: true
+  refresh-minutes: 30
+  navigate-timeout-seconds: 60
+  solve-timeout-seconds: 120
+
+remote-management:
+  # Leave empty on first run to generate a random key and print it once.
+  # Prefer a bcrypt hash in production.
+  secret-key: ""
+
+# Client keys for /v1/* and task status. Can also be created in the UI.
+api-keys: []
+
+# Relative paths are resolved from the config file directory.
+data-dir: "./data"
+auth-dir: "./data/auth"
+debug: false
+usage-statistics-enabled: true
+refresh-interval-minutes: 30
+logging-to-file: false
+# Global proxy for ChatGPT requests and the embedded solver browser.
+# Supported schemes: http://, https://, socks5://.
+proxy-url: ""
+
+image:
+  retention-days: 7
+  storage: "local"
+  account-concurrency: 1
+  poll-timeout-seconds: 120
+  poll-interval-seconds: 10
+  url-response-by-default: true
+  max-image-bytes: 20971520
+  max-image-pixels: 4194304
+  thumbnail-on-demand: true
+
+performance:
+  image-workers: 1
+  parallel-generation: false
+  account-refresh-workers: 1
+  text-cache-entries: 0
+  metrics-mode: "light"
+
+quota-exceeded:
+  switch-account: true
+  switch-model: false
+
+openai-compatibility: []
+max-request-body-bytes: 26214400
+image-generation-model: "gpt-image-2"
+default-upstream-model: "gpt-5-5"
+default-thinking-effort: "auto"
