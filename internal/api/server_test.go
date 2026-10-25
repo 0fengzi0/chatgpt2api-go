@@ -3,8 +3,10 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
-	stdimage "image"
+	"errors"
+	"image"
 	"image/png"
 	"io"
 	"log/slog"
@@ -14,22 +16,38 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/0fengzi0/chatgpt2api-go/internal/account"
 	"github.com/0fengzi0/chatgpt2api-go/internal/auth"
 	"github.com/0fengzi0/chatgpt2api-go/internal/config"
-	"github.com/0fengzi0/chatgpt2api-go/internal/image"
+	"github.com/0fengzi0/chatgpt2api-go/internal/limiter"
+	"github.com/0fengzi0/chatgpt2api-go/internal/output"
 	"github.com/0fengzi0/chatgpt2api-go/internal/provider"
 	"github.com/0fengzi0/chatgpt2api-go/internal/store"
-	"github.com/0fengzi0/chatgpt2api-go/internal/task"
 )
 
-func TestGenerationFlow(t *testing.T) {
+type testServer struct {
+	server     *Server
+	httpServer *httptest.Server
+	cfgStore   *config.Store
+	db         *store.Store
+	apiKey     string
+	management string
+}
+
+func newTestServer(t *testing.T) *testServer {
+	return newTestServerWithProvider(t, testImageProvider{})
+}
+
+func newTestServerWithProvider(t *testing.T, imageProvider provider.Provider) *testServer {
+	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	raw := []byte("host: 127.0.0.1\nport: 0\ndata-dir: " + filepath.ToSlash(dir) + "\nimage:\n  max-image-pixels: 1000000\nperformance:\n  image-workers: 1\n")
+	raw := []byte("host: 127.0.0.1\nport: 0\ndata-dir: " + filepath.ToSlash(dir) + "\n" +
+		"performance:\n  image-workers: 2\nimage:\n  max-image-pixels: 16777216\n")
 	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -39,36 +57,247 @@ func TestGenerationFlow(t *testing.T) {
 	}
 	management, apiKey := "", ""
 	for _, item := range generated {
-		if len(item) > 15 && item[:15] == "management-key=" {
-			management = item[15:]
+		if strings.HasPrefix(item, "management-key=") {
+			management = strings.TrimPrefix(item, "management-key=")
 		}
-		if len(item) > 8 && item[:8] == "api-key=" {
-			apiKey = item[8:]
+		if strings.HasPrefix(item, "api-key=") {
+			apiKey = strings.TrimPrefix(item, "api-key=")
 		}
 	}
 	cfgStore := config.NewStore(path, cfg)
-	db, err := store.Open(cfg.DBPath())
+	db, err := store.Open(cfg.DBPath(), cfg.SigningKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
-	storage, err := image.New(*cfg)
+	t.Cleanup(func() { _ = db.Close() })
+	outputs, err := output.New(cfgStore, db)
 	if err != nil {
 		t.Fatal(err)
 	}
 	accounts := account.NewService(db, cfgStore)
 	authManager := auth.New(cfgStore)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	worker := task.NewWorker(db, cfgStore, storage, testImageProvider{}, logger)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	worker.Start(ctx)
-	defer worker.Stop()
-	server := httptest.NewServer(New(cfgStore, db, accounts, authManager, storage, testImageProvider{}, logger).Handler())
-	defer server.Close()
+	server := New(
+		cfgStore, db, accounts, authManager, outputs, imageProvider,
+		limiter.New(cfgStore), logger,
+	)
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+	return &testServer{
+		server: server, httpServer: httpServer, cfgStore: cfgStore, db: db,
+		apiKey: apiKey, management: management,
+	}
+}
 
-	req, _ := http.NewRequest(http.MethodPost, server.URL+"/v1/images/generations", bytes.NewReader([]byte(`{"prompt":"test","size":"64x64","response_format":"url"}`)))
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+func (s *testServer) request(t *testing.T, method, path string, body io.Reader, apiKey bool) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(method, s.httpServer.URL+path, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if apiKey {
+		req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
+func TestGenerationBase64AndURL(t *testing.T) {
+	ts := newTestServer(t)
+	for _, responseFormat := range []string{"b64_json", "url"} {
+		body := `{"model":"gpt-image-2","prompt":"test image","size":"64x64","response_format":"` + responseFormat + `"}`
+		resp := ts.request(t, http.MethodPost, "/v1/images/generations", strings.NewReader(body), true)
+		if resp.StatusCode != http.StatusOK {
+			raw, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			t.Fatalf("%s status %d: %s", responseFormat, resp.StatusCode, raw)
+		}
+		var result struct {
+			Data []map[string]any `json:"data"`
+			Size string           `json:"size"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if len(result.Data) != 1 || result.Size != "8x8" {
+			t.Fatalf("unexpected response: %#v", result)
+		}
+		if responseFormat == "b64_json" {
+			encoded, _ := result.Data[0]["b64_json"].(string)
+			if _, err := base64.StdEncoding.DecodeString(encoded); err != nil {
+				t.Fatalf("invalid base64: %v", err)
+			}
+		} else {
+			url, _ := result.Data[0]["url"].(string)
+			if !strings.Contains(url, "/generated/") {
+				t.Fatalf("unexpected temporary URL: %q", url)
+			}
+			download, err := http.Get(url)
+			if err != nil {
+				t.Fatal(err)
+			}
+			download.Body.Close()
+			if download.StatusCode != http.StatusOK {
+				t.Fatalf("temporary URL status = %d", download.StatusCode)
+			}
+		}
+	}
+}
+
+func TestEditFlow(t *testing.T) {
+	ts := newTestServer(t)
+	var form bytes.Buffer
+	writer := multipart.NewWriter(&form)
+	_ = writer.WriteField("model", "gpt-image-2")
+	_ = writer.WriteField("prompt", "make it blue")
+	_ = writer.WriteField("size", "64x64")
+	part, err := writer.CreateFormFile("image", "input.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(testPNG()); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest(http.MethodPost, ts.httpServer.URL+"/v1/images/edits", &form)
+	req.Header.Set("Authorization", "Bearer "+ts.apiKey)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("edit status %d: %s", resp.StatusCode, raw)
+	}
+}
+
+func TestEditFlowWithMaskAndWebP(t *testing.T) {
+	ts := newTestServer(t)
+	var form bytes.Buffer
+	writer := multipart.NewWriter(&form)
+	_ = writer.WriteField("model", "gpt-image-2")
+	_ = writer.WriteField("prompt", "replace the masked area")
+	_ = writer.WriteField("output_format", "webp")
+	imagePart, _ := writer.CreateFormFile("image[]", "input.png")
+	_, _ = imagePart.Write(testPNG())
+	maskPart, _ := writer.CreateFormFile("mask", "mask.png")
+	_, _ = maskPart.Write(testPNG())
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest(http.MethodPost, ts.httpServer.URL+"/v1/images/edits", &form)
+	req.Header.Set("Authorization", "Bearer "+ts.apiKey)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("masked edit status %d: %s", resp.StatusCode, raw)
+	}
+	var result struct {
+		OutputFormat string           `json:"output_format"`
+		Data         []map[string]any `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if result.OutputFormat != "webp" || len(result.Data) != 1 {
+		t.Fatalf("unexpected masked edit result: %#v", result)
+	}
+	encoded, _ := result.Data[0]["b64_json"].(string)
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, format, err := image.Decode(bytes.NewReader(raw)); err != nil || format != "webp" {
+		t.Fatalf("decoded format=%q err=%v", format, err)
+	}
+}
+
+func TestModelsAndStrictValidation(t *testing.T) {
+	ts := newTestServer(t)
+	resp := ts.request(t, http.MethodGet, "/v1/models", nil, true)
+	var models struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&models); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if len(models.Data) != 4 {
+		t.Fatalf("model count = %d", len(models.Data))
+	}
+	resp = ts.request(t, http.MethodGet, "/v1/models/gpt-image-2.5-flare", nil, true)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("model detail status = %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	resp = ts.request(t, http.MethodPost, "/v1/images/generations",
+		strings.NewReader(`{"model":"gpt-image-2","prompt":"test","unknown":true}`), true)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unknown parameter status = %d", resp.StatusCode)
+	}
+	var result struct {
+		Error map[string]any `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if result.Error["code"] != "unsupported_parameter" {
+		t.Fatalf("unexpected error: %#v", result.Error)
+	}
+
+	resp = ts.request(t, http.MethodPost, "/v1/images/generations",
+		strings.NewReader(`{"model":"gpt-image-2","prompt":"test","n":5}`), true)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("n validation status = %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestAPIKeyDisabledAndCORS(t *testing.T) {
+	ts := newTestServer(t)
+	if err := ts.server.auth.UpdateAPIKey("default", boolPointer(false), ""); err != nil {
+		t.Fatal(err)
+	}
+	resp := ts.request(t, http.MethodPost, "/v1/images/generations",
+		strings.NewReader(`{"model":"gpt-image-2","prompt":"test"}`), true)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("disabled key status = %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	request := httptest.NewRequest(http.MethodOptions, "/v1/images/generations", nil)
+	request.Header.Set("Origin", "https://api.ai.isancha.com")
+	response := httptest.NewRecorder()
+	ts.server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("allowed preflight = %d", response.Code)
+	}
+	if response.Header().Get("Access-Control-Allow-Origin") != "https://api.ai.isancha.com" {
+		t.Fatalf("missing allow origin")
+	}
+}
+
+func TestAccessSettingsUpdate(t *testing.T) {
+	ts := newTestServer(t)
+	req, _ := http.NewRequest(http.MethodPut, ts.httpServer.URL+"/api/access/settings",
+		strings.NewReader(`{"global_concurrency":5,"account_concurrency":2,"request_timeout_seconds":240,"temporary_url_ttl_seconds":900,"log_retention_days":14,"proxy_url":"http://127.0.0.1:10808"}`))
+	req.Header.Set("X-Management-Key", ts.management)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -76,235 +305,113 @@ func TestGenerationFlow(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("generation status %d: %s", resp.StatusCode, body)
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("settings status %d: %s", resp.StatusCode, raw)
 	}
-	var result map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		t.Fatal(err)
-	}
-	data, _ := result["data"].([]any)
-	if len(data) != 1 {
-		t.Fatalf("unexpected result: %#v", result)
-	}
-	statusReq, _ := http.NewRequest(http.MethodGet, server.URL+"/api/status", nil)
-	statusReq.Header.Set("X-Management-Key", management)
-	statusResp, err := http.DefaultClient.Do(statusReq)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer statusResp.Body.Close()
-	if statusResp.StatusCode != http.StatusOK {
-		t.Fatalf("status returned %d", statusResp.StatusCode)
-	}
-
-	if _, err := db.AddAccount(context.Background(), store.Account{
-		AccessToken: "json-import-token",
-		Status:      store.AccountNormal,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	importReq, _ := http.NewRequest(http.MethodPost, server.URL+"/api/accounts/import-json", bytes.NewReader([]byte(`{"data":{"items":[{"access_token":"json-import-token"}]}}`)))
-	importReq.Header.Set("X-Management-Key", management)
-	importReq.Header.Set("Content-Type", "application/json")
-	importResp, err := http.DefaultClient.Do(importReq)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer importResp.Body.Close()
-	if importResp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(importResp.Body)
-		t.Fatalf("JSON import status %d: %s", importResp.StatusCode, body)
-	}
-	var importResult map[string]any
-	if err := json.NewDecoder(importResp.Body).Decode(&importResult); err != nil {
-		t.Fatal(err)
-	}
-	if importResult["skipped"] != float64(1) {
-		t.Fatalf("duplicate JSON import was not skipped: %#v", importResult)
-	}
-
-	var form bytes.Buffer
-	writer := multipart.NewWriter(&form)
-	_ = writer.WriteField("prompt", "turn the square blue")
-	_ = writer.WriteField("size", "64x64")
-	part, err := writer.CreateFormFile("image", "input.png")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := part.Write([]byte("\x89PNG\r\n\x1a\n")); err != nil {
-		t.Fatal(err)
-	}
-	_ = writer.Close()
-	editReq, _ := http.NewRequest(http.MethodPost, server.URL+"/api/image-tasks/edits", &form)
-	editReq.Header.Set("X-Management-Key", management)
-	editReq.Header.Set("Content-Type", writer.FormDataContentType())
-	editResp, err := http.DefaultClient.Do(editReq)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer editResp.Body.Close()
-	if editResp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(editResp.Body)
-		t.Fatalf("edit status %d: %s", editResp.StatusCode, body)
-	}
-	var editJob map[string]any
-	if err := json.NewDecoder(editResp.Body).Decode(&editJob); err != nil {
-		t.Fatal(err)
-	}
-	editID, _ := editJob["id"].(string)
-	if editID == "" {
-		t.Fatal("edit job id is empty")
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		taskReq, _ := http.NewRequest(http.MethodGet, server.URL+"/api/image-tasks", nil)
-		taskReq.Header.Set("X-Management-Key", management)
-		taskResp, err := http.DefaultClient.Do(taskReq)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var list struct {
-			Items []map[string]any `json:"items"`
-		}
-		_ = json.NewDecoder(taskResp.Body).Decode(&list)
-		taskResp.Body.Close()
-		for _, item := range list.Items {
-			if item["id"] == editID && item["status"] == store.JobSucceeded {
-				return
-			}
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	t.Fatal("edit job did not succeed in time")
-}
-
-func TestAccessSettingsUpdatesProxy(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	managementKey := "management-secret"
-	hash, err := config.HashSecret(managementKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg := config.Default()
-	cfg.DataDir = dir
-	cfg.RemoteManagement.SecretKey = hash
-	cfgStore := config.NewStore(path, &cfg)
-	updatedProxy := ""
-	server := &Server{
-		cfg:    cfgStore,
-		auth:   auth.New(cfgStore),
-		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-		proxyUpdater: func(value string) {
-			updatedProxy = value
-		},
-	}
-	body := bytes.NewBufferString(`{"proxy_url":" http://127.0.0.1:10808 "}`)
-	request := httptest.NewRequest(http.MethodPut, "/api/access/settings", body)
-	request.RemoteAddr = "127.0.0.1:12345"
-	request.Header.Set("X-Management-Key", managementKey)
-	response := httptest.NewRecorder()
-	server.accessSettings(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
-	}
-	if got := cfgStore.Snapshot().ProxyURL; got != "http://127.0.0.1:10808" {
-		t.Fatalf("stored proxy = %q", got)
-	}
-	if updatedProxy != "http://127.0.0.1:10808" {
-		t.Fatalf("proxy updater received %q", updatedProxy)
+	cfg := ts.cfgStore.Snapshot()
+	if cfg.Performance.ImageWorkers != 5 || cfg.Image.AccountConcurrency != 2 ||
+		cfg.Image.RequestTimeoutSeconds != 240 || cfg.Image.TemporaryURLTTLSeconds != 900 ||
+		cfg.Image.LogRetentionDays != 14 {
+		t.Fatalf("settings not saved: %#v", cfg)
 	}
 }
 
-func TestModelCatalogReturnsImageAliases(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	managementKey := "management-secret"
-	hash, err := config.HashSecret(managementKey)
+func TestRequestLogIsWritten(t *testing.T) {
+	ts := newTestServer(t)
+	resp := ts.request(t, http.MethodPost, "/v1/images/generations",
+		strings.NewReader(`{"model":"gpt-image-2","prompt":"logged"}`), true)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("generation status = %d", resp.StatusCode)
+	}
+	items, err := ts.db.ListRequestLogs(context.Background(), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Default()
-	cfg.DataDir = dir
-	cfg.RemoteManagement.SecretKey = hash
-	cfg.ImageGenerationModel = "gpt-image-2"
-	cfg.DefaultUpstreamModel = "gpt-5-5"
-	cfgStore := config.NewStore(path, &cfg)
-	server := &Server{
-		cfg:    cfgStore,
-		auth:   auth.New(cfgStore),
-		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}
-	request := httptest.NewRequest(http.MethodGet, "/api/models", nil)
-	request.Header.Set("X-Management-Key", managementKey)
-	response := httptest.NewRecorder()
-	server.management(server.managementModels)(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
-	}
-	var result struct {
-		Items             []map[string]any `json:"items"`
-		DefaultModel      string           `json:"default_model"`
-		UpstreamAvailable bool             `json:"upstream_available"`
-	}
-	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
-		t.Fatal(err)
-	}
-	if !result.UpstreamAvailable || len(result.Items) != 2 || result.DefaultModel != "gpt-image-2" {
-		t.Fatalf("unexpected model catalog: %#v", result)
-	}
-	if result.Items[0]["id"] != "gpt-image-2" || result.Items[1]["id"] != "gpt-image-2.5" {
-		t.Fatalf("unexpected image models: %#v", result.Items)
+	if len(items) != 1 || items[0].Owner != "default" || items[0].Model != "gpt-image-2" {
+		t.Fatalf("unexpected request log: %#v", items)
 	}
 }
 
-func TestCORSMiddlewareAllowlist(t *testing.T) {
-	cfg := config.Default()
-	cfgStore := config.NewStore(filepath.Join(t.TempDir(), "config.yaml"), &cfg)
-	server := &Server{cfg: cfgStore}
-	handler := server.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
+func TestStreamingImageResponse(t *testing.T) {
+	ts := newTestServer(t)
+	body := `{"model":"gpt-image-2.5-flare","prompt":"stream test","stream":true,"partial_images":2,"output_format":"webp"}`
+	resp := ts.request(t, http.MethodPost, "/v1/images/generations", strings.NewReader(body), true)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("stream status %d: %s", resp.StatusCode, raw)
+	}
+	if !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("content type = %q", resp.Header.Get("Content-Type"))
+	}
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if !strings.Contains(text, "event: image_generation.completed") ||
+		!strings.Contains(text, `"output_format":"webp"`) {
+		t.Fatalf("unexpected stream: %s", text)
+	}
+}
 
-	request := httptest.NewRequest(http.MethodOptions, "/v1/images/generations", nil)
-	request.Header.Set("Origin", "https://api.ai.isancha.com")
-	request.Header.Set("Access-Control-Request-Method", http.MethodPost)
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusNoContent {
-		t.Fatalf("allowed preflight status = %d", response.Code)
+func TestPartialMultiImageFailureIsLogged(t *testing.T) {
+	ts := newTestServerWithProvider(t, &partialFailureProvider{})
+	resp := ts.request(t, http.MethodPost, "/v1/images/generations",
+		strings.NewReader(`{"model":"gpt-image-2","prompt":"partial","n":2}`), true)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("partial failure status = %d", resp.StatusCode)
 	}
-	if got := response.Header().Get("Access-Control-Allow-Origin"); got != "https://api.ai.isancha.com" {
-		t.Fatalf("allow origin = %q", got)
+	items, err := ts.db.ListRequestLogs(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(response.Header().Get("Vary"), "Origin") {
-		t.Fatalf("missing Vary: Origin")
-	}
-
-	request = httptest.NewRequest(http.MethodOptions, "/v1/images/generations", nil)
-	request.Header.Set("Origin", "https://example.com")
-	response = httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusForbidden {
-		t.Fatalf("rejected preflight status = %d", response.Code)
+	if len(items) != 1 || items[0].SucceededImages != 1 || items[0].QuotaUsed != 1 {
+		t.Fatalf("partial failure log = %#v", items)
 	}
 }
 
 type testImageProvider struct{}
 
 func (testImageProvider) Generate(_ context.Context, req provider.Request) (provider.Result, error) {
-	img := stdimage.NewRGBA(stdimage.Rect(0, 0, 8, 8))
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		return provider.Result{}, err
-	}
-	if req.Progress != nil {
-		req.Progress("test_image_ready")
-	}
 	return provider.Result{
-		Images:        [][]byte{buf.Bytes()},
+		Images:        [][]byte{testPNG()},
 		MIME:          "image/png",
 		RevisedPrompt: req.Prompt,
+		AccountID:     "test-account",
 	}, nil
+}
+
+type partialFailureProvider struct {
+	calls atomic.Int64
+}
+
+func (p *partialFailureProvider) Generate(ctx context.Context, req provider.Request) (provider.Result, error) {
+	call := p.calls.Add(1)
+	if call > 1 {
+		return provider.Result{}, errors.New("test upstream failure")
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(50 * time.Millisecond):
+	}
+	return provider.Result{
+		Images: [][]byte{testPNG()}, MIME: "image/png", RevisedPrompt: req.Prompt,
+		AccountID: "partial-success",
+	}, nil
+}
+
+func testPNG() []byte {
+	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	var buffer bytes.Buffer
+	if err := png.Encode(&buffer, img); err != nil {
+		panic(err)
+	}
+	return buffer.Bytes()
+}
+
+func boolPointer(value bool) *bool {
+	return &value
 }

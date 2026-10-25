@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,24 +30,25 @@ const (
 )
 
 type Account struct {
-	ID               string `json:"id"`
-	AccessToken      string `json:"access_token"`
-	RefreshToken     string `json:"refresh_token,omitempty"`
-	IDToken          string `json:"id_token,omitempty"`
-	Email            string `json:"email,omitempty"`
-	UserID           string `json:"user_id,omitempty"`
-	Type             string `json:"type"`
-	SourceType       string `json:"source_type"`
-	Status           string `json:"status"`
-	Quota            int    `json:"quota"`
-	RestoreAt        string `json:"restore_at,omitempty"`
-	Proxy            string `json:"proxy,omitempty"`
-	SuccessCount     int    `json:"success"`
-	FailCount        int    `json:"fail"`
-	LastUsedAt       string `json:"last_used_at,omitempty"`
-	LastRefreshError string `json:"last_refresh_error,omitempty"`
-	CreatedAt        string `json:"created_at"`
-	UpdatedAt        string `json:"updated_at"`
+	ID                 string `json:"id"`
+	AccessToken        string `json:"access_token"`
+	RefreshToken       string `json:"refresh_token,omitempty"`
+	IDToken            string `json:"id_token,omitempty"`
+	Email              string `json:"email,omitempty"`
+	UserID             string `json:"user_id,omitempty"`
+	Type               string `json:"type"`
+	SourceType         string `json:"source_type"`
+	Status             string `json:"status"`
+	Quota              int    `json:"quota"`
+	RestoreAt          string `json:"restore_at,omitempty"`
+	Proxy              string `json:"proxy,omitempty"`
+	SuccessCount       int    `json:"success"`
+	FailCount          int    `json:"fail"`
+	LastUsedAt         string `json:"last_used_at,omitempty"`
+	LastRefreshError   string `json:"last_refresh_error,omitempty"`
+	LastTokenRefreshAt string `json:"last_token_refresh_at,omitempty"`
+	CreatedAt          string `json:"created_at"`
+	UpdatedAt          string `json:"updated_at"`
 }
 
 func (a Account) Public() Account {
@@ -101,19 +103,83 @@ type JobInput struct {
 	MIME    string `json:"mime"`
 }
 
+type RequestLog struct {
+	ID               int64  `json:"id"`
+	RequestID        string `json:"request_id"`
+	Owner            string `json:"owner"`
+	Method           string `json:"method"`
+	Path             string `json:"path"`
+	Mode             string `json:"mode"`
+	Model            string `json:"model"`
+	Status           int    `json:"status"`
+	Error            string `json:"error,omitempty"`
+	DurationMS       int64  `json:"duration_ms"`
+	RequestedImages  int    `json:"requested_images"`
+	SucceededImages  int    `json:"succeeded_images"`
+	QuotaUsed        int    `json:"quota_used"`
+	AccountIDs       string `json:"account_ids,omitempty"`
+	SafetyIdentifier string `json:"safety_identifier,omitempty"`
+	CreatedAt        string `json:"created_at"`
+}
+
+type TemporaryFile struct {
+	ID        string `json:"id"`
+	RelPath   string `json:"rel_path"`
+	MIME      string `json:"mime"`
+	Width     int    `json:"width,omitempty"`
+	Height    int    `json:"height,omitempty"`
+	Bytes     int64  `json:"bytes"`
+	ExpiresAt string `json:"expires_at"`
+	CreatedAt string `json:"created_at"`
+}
+
+type APIKeyUsage struct {
+	Name       string `json:"name"`
+	Requests   int64  `json:"requests"`
+	Failures   int64  `json:"failures"`
+	LastUsedAt string `json:"last_used_at"`
+}
+
+type AccountEvent struct {
+	ID        int64  `json:"id"`
+	AccountID string `json:"account_id"`
+	Event     string `json:"event"`
+	Message   string `json:"message,omitempty"`
+	CreatedAt string `json:"created_at"`
+}
+
+type RequestLogFilter struct {
+	Limit       int
+	Owner       string
+	Model       string
+	Mode        string
+	Status      string
+	CreatedFrom string
+	CreatedTo   string
+}
+
 type Stats struct {
-	AccountsTotal    int   `json:"accounts_total"`
-	AccountsActive   int   `json:"accounts_active"`
-	AccountsLimited  int   `json:"accounts_limited"`
-	AccountsError    int   `json:"accounts_error"`
-	AccountsDisabled int   `json:"accounts_disabled"`
-	QuotaTotal       int   `json:"quota_total"`
-	JobsQueued       int   `json:"jobs_queued"`
-	JobsRunning      int   `json:"jobs_running"`
-	JobsSucceeded    int64 `json:"jobs_succeeded"`
-	JobsFailed       int64 `json:"jobs_failed"`
-	ImagesTotal      int64 `json:"images_total"`
-	ImageBytes       int64 `json:"image_bytes"`
+	AccountsTotal             int     `json:"accounts_total"`
+	AccountsActive            int     `json:"accounts_active"`
+	AccountsLimited           int     `json:"accounts_limited"`
+	AccountsError             int     `json:"accounts_error"`
+	AccountsDisabled          int     `json:"accounts_disabled"`
+	QuotaTotal                int     `json:"quota_total"`
+	JobsQueued                int     `json:"jobs_queued"`
+	JobsRunning               int     `json:"jobs_running"`
+	JobsSucceeded             int64   `json:"jobs_succeeded"`
+	JobsFailed                int64   `json:"jobs_failed"`
+	ImagesTotal               int64   `json:"images_total"`
+	ImageBytes                int64   `json:"image_bytes"`
+	RequestsTotal             int64   `json:"requests_total"`
+	RequestsFailed            int64   `json:"requests_failed"`
+	RequestDurationAvgMS      float64 `json:"request_duration_avg_ms"`
+	RequestsToday             int64   `json:"requests_today"`
+	RequestsFailedToday       int64   `json:"requests_failed_today"`
+	ImagesToday               int64   `json:"images_today"`
+	RequestDurationAvgTodayMS float64 `json:"request_duration_avg_today_ms"`
+	TemporaryFiles            int64   `json:"temporary_files"`
+	TemporaryBytes            int64   `json:"temporary_bytes"`
 }
 
 type Store struct {
@@ -168,6 +234,10 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+func (s *Store) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
+}
+
 func (s *Store) RecoverRunningJobs(ctx context.Context) (int64, error) {
 	res, err := s.db.ExecContext(ctx, `UPDATE image_jobs SET status='queued', lease_until='', progress='', updated_at=? WHERE status='running' AND (lease_until = '' OR lease_until >= ?)`, now(), now())
 	if err != nil {
@@ -198,6 +268,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 	fail_count INTEGER NOT NULL DEFAULT 0,
 	last_used_at TEXT NOT NULL DEFAULT '',
 	last_refresh_error TEXT NOT NULL DEFAULT '',
+	last_token_refresh_at TEXT NOT NULL DEFAULT '',
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );
@@ -270,28 +341,60 @@ CREATE TABLE IF NOT EXISTS api_key_usage (
 
 CREATE TABLE IF NOT EXISTS request_logs (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	request_id TEXT NOT NULL DEFAULT '',
 	owner TEXT NOT NULL DEFAULT '',
 	method TEXT NOT NULL DEFAULT '',
 	path TEXT NOT NULL DEFAULT '',
+	mode TEXT NOT NULL DEFAULT '',
 	model TEXT NOT NULL DEFAULT '',
 	status INTEGER NOT NULL DEFAULT 0,
 	error TEXT NOT NULL DEFAULT '',
 	duration_ms INTEGER NOT NULL DEFAULT 0,
+	requested_images INTEGER NOT NULL DEFAULT 0,
+	succeeded_images INTEGER NOT NULL DEFAULT 0,
+	quota_used INTEGER NOT NULL DEFAULT 0,
+	account_ids TEXT NOT NULL DEFAULT '',
+	safety_identifier TEXT NOT NULL DEFAULT '',
 	created_at TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_request_logs_created ON request_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_request_logs_owner ON request_logs(owner, created_at);
+
+CREATE TABLE IF NOT EXISTS temporary_files (
+	id TEXT PRIMARY KEY,
+	rel_path TEXT NOT NULL UNIQUE,
+	mime TEXT NOT NULL DEFAULT 'image/png',
+	width INTEGER NOT NULL DEFAULT 0,
+	height INTEGER NOT NULL DEFAULT 0,
+	bytes INTEGER NOT NULL DEFAULT 0,
+	expires_at TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_temporary_files_expires ON temporary_files(expires_at);
 `)
 	if err != nil {
 		return err
 	}
 	for _, column := range []struct {
-		name string
-		ddl  string
+		table string
+		name  string
+		ddl   string
 	}{
-		{"access_token_enc", "ALTER TABLE accounts ADD COLUMN access_token_enc TEXT NOT NULL DEFAULT ''"},
-		{"refresh_token_enc", "ALTER TABLE accounts ADD COLUMN refresh_token_enc TEXT NOT NULL DEFAULT ''"},
-		{"id_token_enc", "ALTER TABLE accounts ADD COLUMN id_token_enc TEXT NOT NULL DEFAULT ''"},
+		{"accounts", "access_token_enc", "ALTER TABLE accounts ADD COLUMN access_token_enc TEXT NOT NULL DEFAULT ''"},
+		{"accounts", "refresh_token_enc", "ALTER TABLE accounts ADD COLUMN refresh_token_enc TEXT NOT NULL DEFAULT ''"},
+		{"accounts", "id_token_enc", "ALTER TABLE accounts ADD COLUMN id_token_enc TEXT NOT NULL DEFAULT ''"},
+		{"accounts", "last_token_refresh_at", "ALTER TABLE accounts ADD COLUMN last_token_refresh_at TEXT NOT NULL DEFAULT ''"},
+		{"request_logs", "request_id", "ALTER TABLE request_logs ADD COLUMN request_id TEXT NOT NULL DEFAULT ''"},
+		{"request_logs", "mode", "ALTER TABLE request_logs ADD COLUMN mode TEXT NOT NULL DEFAULT ''"},
+		{"request_logs", "requested_images", "ALTER TABLE request_logs ADD COLUMN requested_images INTEGER NOT NULL DEFAULT 0"},
+		{"request_logs", "succeeded_images", "ALTER TABLE request_logs ADD COLUMN succeeded_images INTEGER NOT NULL DEFAULT 0"},
+		{"request_logs", "quota_used", "ALTER TABLE request_logs ADD COLUMN quota_used INTEGER NOT NULL DEFAULT 0"},
+		{"request_logs", "account_ids", "ALTER TABLE request_logs ADD COLUMN account_ids TEXT NOT NULL DEFAULT ''"},
+		{"request_logs", "safety_identifier", "ALTER TABLE request_logs ADD COLUMN safety_identifier TEXT NOT NULL DEFAULT ''"},
 	} {
-		if err := s.ensureColumn(ctx, "accounts", column.name, column.ddl); err != nil {
+		if err := s.ensureColumn(ctx, column.table, column.name, column.ddl); err != nil {
 			return err
 		}
 	}
@@ -412,12 +515,12 @@ func (s *Store) AddAccount(ctx context.Context, a Account) (Account, error) {
 	_, err = s.db.ExecContext(ctx, `
 INSERT INTO accounts (id, access_token, access_token_enc, refresh_token, refresh_token_enc, id_token, id_token_enc, email, user_id, account_type,
 	source_type, status, quota, restore_at, proxy, success_count, fail_count, last_used_at,
-	last_refresh_error, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	last_refresh_error, last_token_refresh_at, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(access_token) DO NOTHING`,
 		a.ID, lookup, accessEnc, "", refreshEnc, "", idEnc, a.Email, a.UserID, a.Type, a.SourceType,
 		a.Status, a.Quota, a.RestoreAt, a.Proxy, a.SuccessCount, a.FailCount, a.LastUsedAt,
-		a.LastRefreshError, a.CreatedAt, a.UpdatedAt)
+		a.LastRefreshError, a.LastTokenRefreshAt, a.CreatedAt, a.UpdatedAt)
 	if err != nil {
 		return Account{}, err
 	}
@@ -466,10 +569,10 @@ func (s *Store) UpdateAccount(ctx context.Context, a Account) error {
 	_, err = s.db.ExecContext(ctx, `UPDATE accounts SET access_token=?, refresh_token=?, id_token=?, email=?,
 		access_token_enc=?, refresh_token_enc=?, id_token_enc=?,
 		user_id=?, account_type=?, source_type=?, status=?, quota=?, restore_at=?, proxy=?,
-		success_count=?, fail_count=?, last_used_at=?, last_refresh_error=?, updated_at=? WHERE id=?`,
+		success_count=?, fail_count=?, last_used_at=?, last_refresh_error=?, last_token_refresh_at=?, updated_at=? WHERE id=?`,
 		tokenLookup(s.secret, a.AccessToken), "", "", a.Email, accessEnc, refreshEnc, idEnc, a.UserID, a.Type, a.SourceType,
 		a.Status, a.Quota, a.RestoreAt, a.Proxy, a.SuccessCount, a.FailCount, a.LastUsedAt,
-		a.LastRefreshError, a.UpdatedAt, a.ID)
+		a.LastRefreshError, a.LastTokenRefreshAt, a.UpdatedAt, a.ID)
 	return err
 }
 
@@ -481,6 +584,34 @@ func (s *Store) DeleteAccount(ctx context.Context, id string) error {
 func (s *Store) AddAccountEvent(ctx context.Context, accountID, event, message string) {
 	_, _ = s.db.ExecContext(ctx, `INSERT INTO account_events(account_id, event, message, created_at) VALUES(?,?,?,?)`,
 		accountID, event, message, now())
+}
+
+func (s *Store) ListAccountEvents(ctx context.Context, accountID string, limit int) ([]AccountEvent, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	query := `SELECT id, account_id, event, message, created_at FROM account_events`
+	args := make([]any, 0, 2)
+	if strings.TrimSpace(accountID) != "" {
+		query += ` WHERE account_id = ?`
+		args = append(args, strings.TrimSpace(accountID))
+	}
+	query += ` ORDER BY id DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AccountEvent
+	for rows.Next() {
+		var item AccountEvent
+		if err := rows.Scan(&item.ID, &item.AccountID, &item.Event, &item.Message, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) CreateJob(ctx context.Context, j Job) (Job, bool, error) {
@@ -532,7 +663,8 @@ const jobSelect = `SELECT id, client_task_id, owner, mode, prompt, model, size, 
 
 const accountSelect = `SELECT id, access_token, access_token_enc, refresh_token, refresh_token_enc,
 	id_token, id_token_enc, email, user_id, account_type, source_type, status, quota, restore_at,
-	proxy, success_count, fail_count, last_used_at, last_refresh_error, created_at, updated_at FROM accounts`
+	proxy, success_count, fail_count, last_used_at, last_refresh_error, last_token_refresh_at,
+	created_at, updated_at FROM accounts`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -551,7 +683,7 @@ func (s *Store) scanAccount(row rowScanner) (Account, error) {
 	err := row.Scan(&a.ID, &a.AccessToken, &accessEnc, &a.RefreshToken, &refreshEnc,
 		&a.IDToken, &idEnc, &a.Email, &a.UserID, &a.Type, &a.SourceType, &a.Status, &a.Quota,
 		&a.RestoreAt, &a.Proxy, &a.SuccessCount, &a.FailCount, &a.LastUsedAt,
-		&a.LastRefreshError, &a.CreatedAt, &a.UpdatedAt)
+		&a.LastRefreshError, &a.LastTokenRefreshAt, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return a, err
 	}
@@ -826,6 +958,178 @@ func (s *Store) DeleteImageRecord(ctx context.Context, id string) error {
 	return err
 }
 
+func (s *Store) AddRequestLog(ctx context.Context, item RequestLog) (int64, error) {
+	if item.CreatedAt == "" {
+		item.CreatedAt = now()
+	}
+	result, err := s.db.ExecContext(ctx, `INSERT INTO request_logs
+		(request_id, owner, method, path, mode, model, status, error, duration_ms,
+		 requested_images, succeeded_images, quota_used, account_ids, safety_identifier, created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		item.RequestID, item.Owner, item.Method, item.Path, item.Mode, item.Model,
+		item.Status, item.Error, item.DurationMS, item.RequestedImages,
+		item.SucceededImages, item.QuotaUsed, item.AccountIDs, item.SafetyIdentifier, item.CreatedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func (s *Store) ListRequestLogs(ctx context.Context, limit int) ([]RequestLog, error) {
+	return s.ListRequestLogsFiltered(ctx, RequestLogFilter{Limit: limit})
+}
+
+func (s *Store) ListRequestLogsFiltered(ctx context.Context, filter RequestLogFilter) ([]RequestLog, error) {
+	limit := filter.Limit
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	query := `SELECT id, request_id, owner, method, path, mode,
+		model, status, error, duration_ms, requested_images, succeeded_images, quota_used,
+		account_ids, safety_identifier, created_at FROM request_logs WHERE 1=1`
+	args := make([]any, 0, 8)
+	if value := strings.TrimSpace(filter.Owner); value != "" {
+		query += ` AND owner = ?`
+		args = append(args, value)
+	}
+	if value := strings.TrimSpace(filter.Model); value != "" {
+		query += ` AND model = ?`
+		args = append(args, value)
+	}
+	if value := strings.TrimSpace(filter.Mode); value != "" {
+		query += ` AND mode = ?`
+		args = append(args, value)
+	}
+	switch strings.ToLower(strings.TrimSpace(filter.Status)) {
+	case "success":
+		query += ` AND status < 400`
+	case "failed", "error":
+		query += ` AND status >= 400`
+	case "":
+	default:
+		if status, err := strconv.Atoi(filter.Status); err == nil {
+			query += ` AND status = ?`
+			args = append(args, status)
+		}
+	}
+	if value := strings.TrimSpace(filter.CreatedFrom); value != "" {
+		query += ` AND created_at >= ?`
+		args = append(args, value)
+	}
+	if value := strings.TrimSpace(filter.CreatedTo); value != "" {
+		query += ` AND created_at <= ?`
+		args = append(args, value)
+	}
+	query += ` ORDER BY id DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RequestLog
+	for rows.Next() {
+		var item RequestLog
+		if err := rows.Scan(&item.ID, &item.RequestID, &item.Owner, &item.Method, &item.Path,
+			&item.Mode, &item.Model, &item.Status, &item.Error, &item.DurationMS,
+			&item.RequestedImages, &item.SucceededImages, &item.QuotaUsed,
+			&item.AccountIDs, &item.SafetyIdentifier, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteRequestLogs(ctx context.Context, ids []int64) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	placeholders := make([]string, 0, len(ids))
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		placeholders = append(placeholders, "?")
+		args = append(args, id)
+	}
+	result, err := s.db.ExecContext(ctx, `DELETE FROM request_logs WHERE id IN (`+strings.Join(placeholders, ",")+`)`, args...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (s *Store) PurgeRequestLogsBefore(ctx context.Context, cutoff string) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM request_logs WHERE created_at < ?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (s *Store) AddTemporaryFile(ctx context.Context, item TemporaryFile) error {
+	if item.CreatedAt == "" {
+		item.CreatedAt = now()
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO temporary_files
+		(id, rel_path, mime, width, height, bytes, expires_at, created_at)
+		VALUES(?,?,?,?,?,?,?,?)`,
+		item.ID, item.RelPath, item.MIME, item.Width, item.Height, item.Bytes, item.ExpiresAt, item.CreatedAt)
+	return err
+}
+
+func (s *Store) GetTemporaryFile(ctx context.Context, id string) (TemporaryFile, error) {
+	var item TemporaryFile
+	err := s.db.QueryRowContext(ctx, `SELECT id, rel_path, mime, width, height, bytes, expires_at, created_at
+		FROM temporary_files WHERE id = ?`, id).
+		Scan(&item.ID, &item.RelPath, &item.MIME, &item.Width, &item.Height, &item.Bytes, &item.ExpiresAt, &item.CreatedAt)
+	return item, err
+}
+
+func (s *Store) ListExpiredTemporaryFiles(ctx context.Context, cutoff string, limit int) ([]TemporaryFile, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, rel_path, mime, width, height, bytes, expires_at, created_at
+		FROM temporary_files WHERE expires_at < ? ORDER BY expires_at LIMIT ?`, cutoff, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TemporaryFile
+	for rows.Next() {
+		var item TemporaryFile
+		if err := rows.Scan(&item.ID, &item.RelPath, &item.MIME, &item.Width, &item.Height,
+			&item.Bytes, &item.ExpiresAt, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteTemporaryFile(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM temporary_files WHERE id = ?`, id)
+	return err
+}
+
+func (s *Store) ListAPIKeyUsage(ctx context.Context) ([]APIKeyUsage, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT key_name, requests, failures, last_used_at
+		FROM api_key_usage ORDER BY last_used_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []APIKeyUsage
+	for rows.Next() {
+		var item APIKeyUsage
+		if err := rows.Scan(&item.Name, &item.Requests, &item.Failures, &item.LastUsedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) Stats(ctx context.Context) (Stats, error) {
 	var st Stats
 	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(CASE WHEN status='normal' THEN 1 ELSE 0 END),0),
@@ -840,6 +1144,18 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 		COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) FROM image_jobs`).
 		Scan(&st.JobsQueued, &st.JobsRunning, &st.JobsSucceeded, &st.JobsFailed)
 	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(bytes),0) FROM images`).Scan(&st.ImagesTotal, &st.ImageBytes)
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*),
+		COALESCE(SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END),0),
+		COALESCE(AVG(duration_ms),0) FROM request_logs`).
+		Scan(&st.RequestsTotal, &st.RequestsFailed, &st.RequestDurationAvgMS)
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*),
+		COALESCE(SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(succeeded_images),0),
+		COALESCE(AVG(duration_ms),0) FROM request_logs
+		WHERE date(created_at, 'localtime') = date('now', 'localtime')`).
+		Scan(&st.RequestsToday, &st.RequestsFailedToday, &st.ImagesToday, &st.RequestDurationAvgTodayMS)
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(bytes),0) FROM temporary_files`).
+		Scan(&st.TemporaryFiles, &st.TemporaryBytes)
 	return st, nil
 }
 
@@ -847,6 +1163,35 @@ func (s *Store) RecordAPIKeyUse(ctx context.Context, name string, failed bool) {
 	_, _ = s.db.ExecContext(ctx, `INSERT INTO api_key_usage(key_name, requests, failures, last_used_at) VALUES(?,1,?,?)
 		ON CONFLICT(key_name) DO UPDATE SET requests=requests+1, failures=failures+excluded.failures, last_used_at=excluded.last_used_at`,
 		name, boolInt(failed), now())
+}
+
+func (s *Store) RenameAPIKeyUsage(ctx context.Context, oldName, newName string) error {
+	oldName = strings.TrimSpace(oldName)
+	newName = strings.TrimSpace(newName)
+	if oldName == "" || newName == "" || oldName == newName {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `INSERT INTO api_key_usage(key_name, requests, failures, last_used_at)
+		SELECT ?, requests, failures, last_used_at FROM api_key_usage WHERE key_name = ?
+		ON CONFLICT(key_name) DO UPDATE SET
+			requests = api_key_usage.requests + excluded.requests,
+			failures = api_key_usage.failures + excluded.failures,
+			last_used_at = CASE WHEN excluded.last_used_at > api_key_usage.last_used_at
+				THEN excluded.last_used_at ELSE api_key_usage.last_used_at END`,
+		newName, oldName)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `DELETE FROM api_key_usage WHERE key_name = ?`, oldName)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func boolInt(v bool) int {

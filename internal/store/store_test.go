@@ -54,3 +54,29 @@ func TestAccountSecretsAreEncryptedAtRest(t *testing.T) {
 		t.Fatalf("decrypt account: %#v err=%v", got, err)
 	}
 }
+
+func TestRequestLogFilters(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "logs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	for _, item := range []RequestLog{
+		{RequestID: "a", Owner: "key-a", Model: "gpt-image-2", Mode: "generation", Status: 200},
+		{RequestID: "b", Owner: "key-b", Model: "gpt-image-2.5", Mode: "edit", Status: 502},
+	} {
+		if _, err := s.AddRequestLog(ctx, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err := s.ListRequestLogsFiltered(ctx, RequestLogFilter{
+		Owner: "key-a", Status: "success", Mode: "generation",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].RequestID != "a" {
+		t.Fatalf("unexpected filtered logs: %#v", items)
+	}
+}

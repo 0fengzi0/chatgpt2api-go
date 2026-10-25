@@ -74,15 +74,18 @@ type RemoteManagement struct {
 }
 
 type ImageConfig struct {
-	RetentionDays        int    `yaml:"retention-days" json:"retention_days"`
-	Storage              string `yaml:"storage" json:"storage"`
-	AccountConcurrency   int    `yaml:"account-concurrency" json:"account_concurrency"`
-	PollTimeoutSeconds   int    `yaml:"poll-timeout-seconds" json:"poll_timeout_seconds"`
-	PollIntervalSeconds  int    `yaml:"poll-interval-seconds" json:"poll_interval_seconds"`
-	URLResponseByDefault bool   `yaml:"url-response-by-default" json:"url_response_by_default"`
-	MaxImageBytes        int64  `yaml:"max-image-bytes" json:"max_image_bytes"`
-	MaxImagePixels       int64  `yaml:"max-image-pixels" json:"max_image_pixels"`
-	ThumbnailOnDemand    bool   `yaml:"thumbnail-on-demand" json:"thumbnail_on_demand"`
+	AccountConcurrency        int   `yaml:"account-concurrency" json:"account_concurrency"`
+	PollTimeoutSeconds        int   `yaml:"poll-timeout-seconds" json:"poll_timeout_seconds"`
+	PollIntervalSeconds       int   `yaml:"poll-interval-seconds" json:"poll_interval_seconds"`
+	RequestTimeoutSeconds     int   `yaml:"request-timeout-seconds" json:"request_timeout_seconds"`
+	TemporaryURLTTLSeconds    int   `yaml:"temporary-url-ttl-seconds" json:"temporary_url_ttl_seconds"`
+	QueueSize                 int   `yaml:"queue-size" json:"queue_size"`
+	MaxUploadBytes            int64 `yaml:"max-upload-bytes" json:"max_upload_bytes"`
+	MaxImageBytes             int64 `yaml:"max-image-bytes" json:"max_image_bytes"`
+	MaxImagePixels            int64 `yaml:"max-image-pixels" json:"max_image_pixels"`
+	MaxDimension              int   `yaml:"max-dimension" json:"max_dimension"`
+	LogRetentionDays          int   `yaml:"log-retention-days" json:"log_retention_days"`
+	AutoRemoveInvalidAccounts bool  `yaml:"auto-remove-invalid-accounts" json:"auto_remove_invalid_accounts"`
 }
 
 type PerformanceConfig struct {
@@ -133,6 +136,7 @@ type Config struct {
 	CORS                  CORSConfig          `yaml:"cors" json:"cors"`
 	PublicBaseURL         string              `yaml:"public-base-url" json:"public_base_url"`
 	SigningKey            string              `yaml:"signing-key" json:"signing_key"`
+	SensitiveWords        []string            `yaml:"sensitive-words" json:"sensitive_words"`
 	MaxRequestBodyBytes   int64               `yaml:"max-request-body-bytes" json:"max_request_body_bytes"`
 	ImageGenerationModel  string              `yaml:"image-generation-model" json:"image_generation_model"`
 	DefaultUpstreamModel  string              `yaml:"default-upstream-model" json:"default_upstream_model"`
@@ -150,18 +154,20 @@ func Default() Config {
 		RefreshIntervalMinute: 30,
 		ProviderBaseURL:       "https://chatgpt.com",
 		Image: ImageConfig{
-			RetentionDays:        7,
-			Storage:              "local",
-			AccountConcurrency:   1,
-			PollTimeoutSeconds:   120,
-			PollIntervalSeconds:  10,
-			URLResponseByDefault: true,
-			MaxImageBytes:        20 * 1024 * 1024,
-			MaxImagePixels:       4 * 1024 * 1024,
-			ThumbnailOnDemand:    true,
+			AccountConcurrency:     1,
+			PollTimeoutSeconds:     120,
+			PollIntervalSeconds:    10,
+			RequestTimeoutSeconds:  300,
+			TemporaryURLTTLSeconds: 600,
+			QueueSize:              100,
+			MaxUploadBytes:         25 * 1024 * 1024,
+			MaxImageBytes:          20 * 1024 * 1024,
+			MaxImagePixels:         16 * 1024 * 1024,
+			MaxDimension:           4096,
+			LogRetentionDays:       30,
 		},
 		Performance: PerformanceConfig{
-			ImageWorkers:          1,
+			ImageWorkers:          3,
 			ParallelGeneration:    false,
 			AccountRefreshWorkers: 1,
 			TextCacheEntries:      0,
@@ -169,6 +175,7 @@ func Default() Config {
 		},
 		QuotaExceeded: QuotaExceededConfig{SwitchAccount: true},
 		Sentinel: SentinelConfig{
+			Timezone:            "Asia/Shanghai",
 			Headless:            true,
 			NoSandbox:           true,
 			RefreshMinutes:      30,
@@ -183,7 +190,7 @@ func Default() Config {
 			"https://www.isancha.com",
 			"https://*.isancha.com",
 		}},
-		MaxRequestBodyBytes:   25 * 1024 * 1024,
+		MaxRequestBodyBytes:   105 * 1024 * 1024,
 		ImageGenerationModel:  "gpt-image-2",
 		DefaultUpstreamModel:  "gpt-5-5",
 		DefaultThinkingEffort: "auto",
@@ -203,14 +210,8 @@ func (c *Config) Normalize() {
 	if c.AuthDir == "" {
 		c.AuthDir = filepath.Join(c.DataDir, "auth")
 	}
-	if c.Image.RetentionDays < 1 {
-		c.Image.RetentionDays = 7
-	}
 	if c.RefreshIntervalMinute < 1 {
 		c.RefreshIntervalMinute = 30
-	}
-	if c.Image.Storage == "" {
-		c.Image.Storage = "local"
 	}
 	if c.Image.AccountConcurrency < 1 {
 		c.Image.AccountConcurrency = 1
@@ -221,24 +222,52 @@ func (c *Config) Normalize() {
 	if c.Image.PollIntervalSeconds < 1 {
 		c.Image.PollIntervalSeconds = 10
 	}
+	if c.Image.RequestTimeoutSeconds < 30 {
+		c.Image.RequestTimeoutSeconds = 300
+	}
+	if c.Image.TemporaryURLTTLSeconds < 60 {
+		c.Image.TemporaryURLTTLSeconds = 600
+	}
+	if c.Image.QueueSize < 1 {
+		c.Image.QueueSize = 100
+	}
+	if c.Image.MaxUploadBytes < 1 {
+		c.Image.MaxUploadBytes = 25 * 1024 * 1024
+	}
 	if c.Image.MaxImageBytes < 1 {
 		c.Image.MaxImageBytes = 20 * 1024 * 1024
 	}
 	if c.Image.MaxImagePixels < 1 {
-		c.Image.MaxImagePixels = 4 * 1024 * 1024
+		c.Image.MaxImagePixels = 16 * 1024 * 1024
+	}
+	if c.Image.MaxDimension < 256 {
+		c.Image.MaxDimension = 4096
+	}
+	if c.Image.LogRetentionDays < 1 {
+		c.Image.LogRetentionDays = 30
 	}
 	if c.Performance.ImageWorkers < 1 {
-		c.Performance.ImageWorkers = 1
+		c.Performance.ImageWorkers = 3
 	}
-	if c.Performance.ImageWorkers > 4 {
-		c.Performance.ImageWorkers = 4
+	if c.Performance.ImageWorkers > 64 {
+		c.Performance.ImageWorkers = 64
 	}
 	if c.Performance.AccountRefreshWorkers < 1 {
 		c.Performance.AccountRefreshWorkers = 1
 	}
 	c.ProxyURL = strings.TrimSpace(c.ProxyURL)
+	words := c.SensitiveWords[:0]
+	for _, word := range c.SensitiveWords {
+		if word = strings.TrimSpace(word); word != "" {
+			words = append(words, word)
+		}
+	}
+	c.SensitiveWords = words
 	c.Sentinel.BrowserPath = strings.TrimSpace(c.Sentinel.BrowserPath)
 	c.Sentinel.Timezone = strings.TrimSpace(c.Sentinel.Timezone)
+	if c.Sentinel.Timezone == "" {
+		c.Sentinel.Timezone = "Asia/Shanghai"
+	}
 	if c.Sentinel.RefreshMinutes < 1 {
 		c.Sentinel.RefreshMinutes = 30
 	}
@@ -256,7 +285,7 @@ func (c *Config) Normalize() {
 	}
 	c.CORS.AllowedOrigins = origins
 	if c.MaxRequestBodyBytes < 1 {
-		c.MaxRequestBodyBytes = 25 * 1024 * 1024
+		c.MaxRequestBodyBytes = 105 * 1024 * 1024
 	}
 	for i := range c.APIKeys {
 		if c.APIKeys[i].Name == "" {
@@ -418,10 +447,10 @@ func ValidateProxyURL(value string) error {
 		return errors.New("proxy URL must include a host")
 	}
 	switch strings.ToLower(parsed.Scheme) {
-	case "http", "https", "socks5":
+	case "http", "https", "socks5", "socks5h":
 		return nil
 	default:
-		return errors.New("proxy URL scheme must be http, https, or socks5")
+		return errors.New("proxy URL scheme must be http, https, socks5, or socks5h")
 	}
 }
 
@@ -510,6 +539,14 @@ func VerifyAPIKey(item APIKey, candidate string) bool {
 			return false
 		}
 	}
+	return MatchesAPIKey(item, candidate)
+}
+
+func MatchesAPIKey(item APIKey, candidate string) bool {
+	candidate = strings.TrimSpace(candidate)
+	if candidate == "" {
+		return false
+	}
 	if strings.TrimSpace(item.KeyHash) != "" {
 		return subtle.ConstantTimeCompare([]byte(strings.ToLower(item.KeyHash)), []byte(strings.ToLower(HashAPIKey(candidate)))) == 1
 	}
@@ -538,10 +575,6 @@ func (c *Config) ManagementSecretKey() string {
 
 func (c *Config) ManagementEnabled() bool {
 	return c.ManagementSecretKey() != ""
-}
-
-func (c *Config) ImageDir() string {
-	return filepath.Join(c.DataDirPath(), "images")
 }
 
 func (c *Config) DBPath() string {

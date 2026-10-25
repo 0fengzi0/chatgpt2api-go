@@ -1,5 +1,9 @@
 # chatgpt2api 的 Go 复刻方案
 
+> 历史规划文档。当前已确认的生图网关范围、接口和验收标准以
+> [image-gateway-requirements.md](image-gateway-requirements.md) 和
+> [README-go.md](../README-go.md) 为准。
+
 分析基线：当前仓库 `chatgpt2api` 1.8.0（`dc105e5`），后端为 FastAPI，前端为 Next.js。
 本文针对“用 Go 复刻图片生成与账号管理”整理功能边界、Go 架构和优先补齐项。
 

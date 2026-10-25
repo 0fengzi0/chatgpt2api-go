@@ -8,18 +8,23 @@ import (
 )
 
 type Request struct {
-	Prompt   string
-	Model    string
-	Size     string
-	Quality  string
-	Images   [][]byte
-	Progress func(string)
+	Prompt           string
+	Model            string
+	Size             string
+	Quality          string
+	Background       string
+	Moderation       string
+	SafetyIdentifier string
+	Images           [][]byte
+	Progress         func(string)
 }
 
 type Result struct {
 	Images        [][]byte
 	MIME          string
 	RevisedPrompt string
+	AccountID     string
+	AccountEmail  string
 }
 
 type Provider interface {

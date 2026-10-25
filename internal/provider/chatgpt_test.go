@@ -110,7 +110,9 @@ func TestChatGPTGenerateWithMockUpstream(t *testing.T) {
 }
 
 func TestResolveImageModel(t *testing.T) {
-	for _, requestModel := range []string{"", "gpt-image-2", "gpt-image-2.5"} {
+	for _, requestModel := range []string{
+		"", "gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-sunburst", "gpt-image-2.5-flare",
+	} {
 		got, err := resolveImageModel(requestModel, "gpt-5-5")
 		if err != nil {
 			t.Fatalf("resolveImageModel(%q): %v", requestModel, err)

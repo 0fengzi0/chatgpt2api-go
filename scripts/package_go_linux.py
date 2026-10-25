@@ -9,16 +9,15 @@ import tarfile
 from pathlib import Path
 
 
-ARCHITECTURES = ("amd64", "arm64")
+ARCHITECTURES = ("amd64",)
 EXECUTABLE_NAMES = {"chatgpt2api", "cleanup-images.sh"}
 SOURCE_DIRS = {
-    "amd64": "release-amd64",
-    "arm64": "release-arm64",
+    "amd64": "release-image-gateway-amd64",
 }
 
 
 def archive_name(arch: str) -> str:
-    return f"chatgpt2api-linux-{arch}.tar.gz"
+    return f"chatgpt2api-image-gateway-linux-{arch}.tar.gz"
 
 
 def add_tree(tar: tarfile.TarFile, source: Path, archive_root: str) -> None:
@@ -49,7 +48,7 @@ def build_archive(dist: Path, arch: str) -> Path:
     with destination.open("wb") as raw:
         with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:
             with tarfile.open(fileobj=compressed, mode="w") as tar:
-                add_tree(tar, source, f"chatgpt2api-linux-{arch}")
+                add_tree(tar, source, f"chatgpt2api-image-gateway-linux-{arch}")
     return destination
 
 

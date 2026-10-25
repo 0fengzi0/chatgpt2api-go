@@ -1,10 +1,10 @@
-# chatgpt2api-go example. Copy to config.yaml and edit.
-# config.yaml, data/, bin/ are intentionally ignored by Git.
+# ChatGPT2API Image Gateway example.
+# Copy to config.yaml. Do not commit generated secrets or account data.
 
 host: "127.0.0.1"
 port: 3000
 provider-base-url: "https://chatgpt.com"
-public-base-url: ""          # optional, e.g. https://api.example.com
+public-base-url: "" # Production: https://api.example.com
 
 cors:
   allowed-origins:
@@ -15,11 +15,10 @@ cors:
     - "https://www.isancha.com"
     - "https://*.isancha.com"
 
-# The Go service starts its own browser-backed Sentinel solver.
 sentinel:
-  # Empty means auto-detect Chromium, Chrome, or Edge.
+  # Empty auto-detects Chromium, Chrome, or Edge.
   browser-path: ""
-  timezone: ""
+  timezone: "Asia/Shanghai"
   headless: true
   no-sandbox: true
   refresh-minutes: 30
@@ -27,48 +26,41 @@ sentinel:
   solve-timeout-seconds: 120
 
 remote-management:
-  # Leave empty on first run to generate a random key and print it once.
-  # Prefer a bcrypt hash in production.
+  # Empty on first start generates a key and prints it once.
   secret-key: ""
 
-# Client keys for /v1/* and task status. Can also be created in the UI.
+# Client keys for /v1/*. Multiple keys can also be managed in the admin UI.
 api-keys: []
 
-# Relative paths are resolved from the config file directory.
 data-dir: "./data"
-auth-dir: "./data/auth"
 debug: false
-usage-statistics-enabled: true
-refresh-interval-minutes: 30
 logging-to-file: false
-# Global proxy for ChatGPT requests and the embedded solver browser.
-# Supported schemes: http://, https://, socks5://.
+refresh-interval-minutes: 30
+
+# Global proxy for ChatGPT and the embedded browser solver.
+# Supported schemes: http, https, socks5, socks5h.
 proxy-url: ""
 
 image:
-  retention-days: 7
-  storage: "local"
   account-concurrency: 1
   poll-timeout-seconds: 120
   poll-interval-seconds: 10
-  url-response-by-default: true
+  request-timeout-seconds: 300
+  temporary-url-ttl-seconds: 600
+  queue-size: 100
+  max-upload-bytes: 26214400
   max-image-bytes: 20971520
-  max-image-pixels: 4194304
-  thumbnail-on-demand: true
+  max-image-pixels: 16777216
+  max-dimension: 4096
+  log-retention-days: 30
+  auto-remove-invalid-accounts: false
 
 performance:
-  image-workers: 1
-  parallel-generation: false
+  image-workers: 3
   account-refresh-workers: 1
-  text-cache-entries: 0
-  metrics-mode: "light"
 
-quota-exceeded:
-  switch-account: true
-  switch-model: false
+sensitive-words: []
 
-openai-compatibility: []
-max-request-body-bytes: 26214400
-image-generation-model: "gpt-image-2"
+max-request-body-bytes: 110100480
 default-upstream-model: "gpt-5-5"
 default-thinking-effort: "auto"

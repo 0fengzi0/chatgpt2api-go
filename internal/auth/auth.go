@@ -3,10 +3,18 @@ package auth
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/0fengzi0/chatgpt2api-go/internal/config"
+)
+
+var (
+	ErrMissingAPIKey  = errors.New("missing API key")
+	ErrInvalidAPIKey  = errors.New("invalid API key")
+	ErrDisabledAPIKey = errors.New("api key is disabled or expired")
 )
 
 type Manager struct {
@@ -33,20 +41,34 @@ func (m *Manager) Management(r *http.Request) (bool, bool) {
 }
 
 func (m *Manager) APIKey(r *http.Request) (string, bool) {
+	name, err := m.AuthenticateAPIKey(r)
+	return name, err == nil
+}
+
+func (m *Manager) AuthenticateAPIKey(r *http.Request) (string, error) {
 	cfg := m.store.Snapshot()
 	candidate := bearer(r.Header.Get("Authorization"))
 	if candidate == "" {
 		candidate = strings.TrimSpace(r.Header.Get("X-API-Key"))
 	}
 	if candidate == "" {
-		return "", false
+		return "", ErrMissingAPIKey
 	}
 	for _, item := range cfg.APIKeys {
-		if config.VerifyAPIKey(item, candidate) {
-			return item.Name, true
+		if !config.MatchesAPIKey(item, candidate) {
+			continue
 		}
+		if !item.Enabled {
+			return item.Name, ErrDisabledAPIKey
+		}
+		if item.ExpiresAt != "" {
+			if expires, err := time.Parse(time.RFC3339, item.ExpiresAt); err == nil && time.Now().After(expires) {
+				return item.Name, ErrDisabledAPIKey
+			}
+		}
+		return item.Name, nil
 	}
-	return "", false
+	return "", ErrInvalidAPIKey
 }
 
 func (m *Manager) UpdateManagementKey(raw string) error {
@@ -63,6 +85,12 @@ func (m *Manager) CreateAPIKey(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = "client"
+	}
+	cfg := m.store.Snapshot()
+	for _, item := range cfg.APIKeys {
+		if strings.EqualFold(strings.TrimSpace(item.Name), name) {
+			return "", errors.New("api key name already exists")
+		}
 	}
 	raw, err := randomKey("sk-")
 	if err != nil {
@@ -82,9 +110,25 @@ func (m *Manager) CreateAPIKey(name string) (string, error) {
 }
 
 func (m *Manager) UpdateAPIKey(name string, enabled *bool, newName string) error {
+	name = strings.TrimSpace(name)
+	newName = strings.TrimSpace(newName)
+	found := false
+	cfg := m.store.Snapshot()
+	for _, item := range cfg.APIKeys {
+		if strings.EqualFold(strings.TrimSpace(item.Name), name) {
+			found = true
+			continue
+		}
+		if newName != "" && strings.EqualFold(strings.TrimSpace(item.Name), newName) {
+			return errors.New("api key name already exists")
+		}
+	}
+	if !found {
+		return errors.New("api key not found")
+	}
 	return m.store.Update(func(cfg *config.Config) {
 		for i := range cfg.APIKeys {
-			if cfg.APIKeys[i].Name != name {
+			if !strings.EqualFold(strings.TrimSpace(cfg.APIKeys[i].Name), name) {
 				continue
 			}
 			if newName != "" {
@@ -98,9 +142,19 @@ func (m *Manager) UpdateAPIKey(name string, enabled *bool, newName string) error
 }
 
 func (m *Manager) DeleteAPIKey(name string) error {
+	found := false
+	for _, item := range m.store.Snapshot().APIKeys {
+		if strings.EqualFold(strings.TrimSpace(item.Name), name) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return errors.New("api key not found")
+	}
 	return m.store.Update(func(cfg *config.Config) {
 		for i := range cfg.APIKeys {
-			if cfg.APIKeys[i].Name == name {
+			if strings.EqualFold(strings.TrimSpace(cfg.APIKeys[i].Name), name) {
 				cfg.APIKeys = append(cfg.APIKeys[:i], cfg.APIKeys[i+1:]...)
 				return
 			}

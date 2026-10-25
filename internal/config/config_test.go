@@ -131,7 +131,7 @@ api-keys:
 }
 
 func TestValidateProxyURL(t *testing.T) {
-	for _, value := range []string{"", "http://127.0.0.1:10808", "https://proxy.example.com", "socks5://127.0.0.1:1080"} {
+	for _, value := range []string{"", "http://127.0.0.1:10808", "https://proxy.example.com", "socks5://127.0.0.1:1080", "socks5h://127.0.0.1:1080"} {
 		if err := ValidateProxyURL(value); err != nil {
 			t.Fatalf("ValidateProxyURL(%q): %v", value, err)
 		}
@@ -156,8 +156,27 @@ func TestSentinelDefaults(t *testing.T) {
 	if !cfg.Sentinel.Headless || !cfg.Sentinel.NoSandbox {
 		t.Fatalf("unexpected sentinel browser defaults: %#v", cfg.Sentinel)
 	}
+	if cfg.Sentinel.Timezone != "Asia/Shanghai" {
+		t.Fatalf("unexpected sentinel timezone: %q", cfg.Sentinel.Timezone)
+	}
 	if cfg.Sentinel.RefreshMinutes != 30 || cfg.Sentinel.NavigateTimeoutSecs != 60 || cfg.Sentinel.SolveTimeoutSeconds != 120 {
 		t.Fatalf("unexpected sentinel timeout defaults: %#v", cfg.Sentinel)
+	}
+}
+
+func TestImageGatewayDefaults(t *testing.T) {
+	cfg := Default()
+	if cfg.Performance.ImageWorkers != 3 || cfg.Image.AccountConcurrency != 1 {
+		t.Fatalf("unexpected concurrency defaults: performance=%d account=%d",
+			cfg.Performance.ImageWorkers, cfg.Image.AccountConcurrency)
+	}
+	if cfg.Image.RequestTimeoutSeconds != 300 || cfg.Image.TemporaryURLTTLSeconds != 600 {
+		t.Fatalf("unexpected timeout defaults: request=%d url=%d",
+			cfg.Image.RequestTimeoutSeconds, cfg.Image.TemporaryURLTTLSeconds)
+	}
+	if cfg.Image.LogRetentionDays != 30 || cfg.Image.MaxImagePixels != 16*1024*1024 {
+		t.Fatalf("unexpected retention or pixel default: retention=%d pixels=%d",
+			cfg.Image.LogRetentionDays, cfg.Image.MaxImagePixels)
 	}
 }
 

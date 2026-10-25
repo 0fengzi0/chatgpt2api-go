@@ -3,6 +3,7 @@ module github.com/0fengzi0/chatgpt2api-go
 go 1.26.0
 
 require (
+	github.com/gen2brain/webp v0.6.4
 	github.com/go-rod/rod v0.116.2
 	github.com/go-rod/stealth v0.4.9
 	golang.org/x/crypto v0.58.0
@@ -12,6 +13,7 @@ require (
 
 require (
 	github.com/dustin/go-humanize v1.1.0 // indirect
+	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect

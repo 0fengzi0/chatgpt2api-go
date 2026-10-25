@@ -2,6 +2,11 @@
 
 ## Unreleased
 
++ [新增] 完成 Go 生图 API 网关：OpenAI GPT Image 生成/编辑、模型查询、Base64/短期 URL、SSE、PNG/JPEG/WebP、多参考图与 mask。
++ [新增] 账号池支持 Access Token/JSON 导入、Token 自动刷新与 keepalive、额度扣减、限流恢复、代理和并发调度。
++ [新增] 极简管理端支持账号、API Key、运行设置、请求日志和账号事件；移除在线画图、图片资产、文本、搜索和 PPT/PSD 路由。
++ [新增] 增加健康检查、就绪检查、Prometheus 指标、可配置日志保留期和 Linux amd64 单二进制发布包。
+
 ## 1.8.0 - 2026-07-28
 
 + [新增] 新增默认请求上游模型名称和默认思考强度配置，支持在设置页面修改，并可通过模型名的 `-standard`、`-extended`、`-max` 后缀覆盖思考强度。

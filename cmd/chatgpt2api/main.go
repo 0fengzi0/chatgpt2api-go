@@ -20,20 +20,19 @@ import (
 	"github.com/0fengzi0/chatgpt2api-go/internal/api"
 	"github.com/0fengzi0/chatgpt2api-go/internal/auth"
 	"github.com/0fengzi0/chatgpt2api-go/internal/config"
-	"github.com/0fengzi0/chatgpt2api-go/internal/image"
-	"github.com/0fengzi0/chatgpt2api-go/internal/maintenance"
+	"github.com/0fengzi0/chatgpt2api-go/internal/limiter"
 	"github.com/0fengzi0/chatgpt2api-go/internal/migrate"
+	"github.com/0fengzi0/chatgpt2api-go/internal/output"
 	"github.com/0fengzi0/chatgpt2api-go/internal/provider"
 	"github.com/0fengzi0/chatgpt2api-go/internal/sentinelbrowser"
 	"github.com/0fengzi0/chatgpt2api-go/internal/store"
-	"github.com/0fengzi0/chatgpt2api-go/internal/task"
 )
 
 func main() {
 	configPath := flag.String("config", config.DefaultConfigPath, "path to config.yaml or config.json")
 	migrateLegacy := flag.Bool("migrate-legacy", false, "import data/accounts.json and data/auth_keys.json from the Python version")
 	setManagementKey := flag.String("set-management-key", "", "rotate the management key and exit after saving")
-	cleanupImages := flag.Bool("cleanup-images", false, "delete expired images once and exit")
+	cleanupImages := flag.Bool("cleanup-images", false, "delete expired temporary images and logs once and exit")
 	flag.Parse()
 
 	cfg, generated, err := config.Load(*configPath)
@@ -73,24 +72,24 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
-	storage, err := image.New(*cfg)
+	outputs, err := output.New(cfgStore, db)
 	if err != nil {
-		logger.Error("open image storage", "error", err)
+		logger.Error("open temporary image storage", "error", err)
 		os.Exit(1)
 	}
 	if *cleanupImages {
-		removed, err := maintenance.New(db, cfgStore, storage, logger).RunOnce(context.Background())
+		removed, err := outputs.Cleanup(context.Background())
 		if err != nil {
-			logger.Error("cleanup images", "error", err)
+			logger.Error("cleanup temporary images", "error", err)
 			os.Exit(1)
 		}
-		fmt.Fprintf(os.Stdout, "cleaned images: %d\n", removed)
+		logsRemoved, err := outputs.CleanupLogs(context.Background())
+		if err != nil {
+			logger.Error("cleanup request logs", "error", err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stdout, "cleaned temporary images: %d\ncleaned request logs: %d\n", removed, logsRemoved)
 		return
-	}
-	if recovered, err := db.RecoverRunningJobs(context.Background()); err != nil {
-		logger.Warn("recover interrupted jobs", "error", err)
-	} else if recovered > 0 {
-		logger.Info("recovered interrupted image jobs", "count", recovered)
 	}
 	if *migrateLegacy {
 		if count, err := migrate.LegacyAccountFiles(context.Background(), db, cfg.DataDirPath()); err != nil {
@@ -132,19 +131,21 @@ func main() {
 			logger.Info("embedded sentinel solver ready", "browser", status.BrowserVersion, "path", status.BrowserPath)
 		}
 	}()
-	worker := task.NewWorker(db, cfgStore, storage, imageProvider, logger)
-	worker.Start(ctx)
-	defer worker.Stop()
 	go accountRefreshLoop(ctx, accounts, cfgStore, logger)
-	maintenance.New(db, cfgStore, storage, logger).Start(ctx)
+	go outputs.RunMaintenance(ctx)
+	requestLimiter := limiter.New(cfgStore)
 
 	server := &http.Server{
 		Addr: listenAddress(cfg.Host, cfg.Port),
 		Handler: api.New(
-			cfgStore, db, accounts, authManager, storage, imageProvider, logger,
+			cfgStore, db, accounts, authManager, outputs, imageProvider, requestLimiter, logger,
 			api.WithProxyUpdater(solver.SetProxyURL),
+			api.WithReadiness(func() bool { return solver.Status().Ready }),
+			api.WithSolverStatus(func() any { return solver.Status() }),
 		).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      time.Duration(cfg.Image.RequestTimeoutSeconds+30) * time.Second,
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    1 << 20,
 	}
@@ -186,22 +187,21 @@ func newLogger(cfg *config.Config) *slog.Logger {
 }
 
 func accountRefreshLoop(ctx context.Context, accounts *account.Service, cfgStore *config.Store, logger *slog.Logger) {
-	interval := time.Duration(cfgStore.Snapshot().RefreshIntervalMinute) * time.Minute
-	if interval < time.Minute {
-		interval = 30 * time.Minute
-	}
-	timer := time.NewTimer(interval)
-	defer timer.Stop()
 	for {
+		interval := time.Duration(cfgStore.Snapshot().RefreshIntervalMinute) * time.Minute
+		if interval < time.Minute {
+			interval = 30 * time.Minute
+		}
+		timer := time.NewTimer(interval)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
 		case <-timer.C:
 			if len(accountsMustList(ctx, accounts)) > 0 {
 				result := accounts.RefreshMany(ctx, nil)
 				logger.Info("scheduled account refresh", "refreshed", result.Refreshed, "errors", len(result.Errors))
 			}
-			timer.Reset(interval)
 		}
 	}
 }

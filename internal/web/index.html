@@ -3,164 +3,500 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>chatgpt2api go</title>
+  <link rel="icon" href="data:,">
+  <title>ChatGPT2API Image Gateway</title>
   <style>
-    :root{--bg:#f6f5f2;--panel:#fff;--line:#e7e4dc;--text:#1d1d1b;--muted:#77736a;--accent:#1d1d1b;--danger:#b53a3a;--ok:#26734d}
-    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
-    header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 24px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.92);position:sticky;top:0;z-index:5}
-    h1{margin:0;font-size:17px;letter-spacing:-.02em}.muted{color:var(--muted)}.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-    main{max-width:1180px;margin:0 auto;padding:24px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
-    .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
-    .stat{font-size:26px;font-weight:700;letter-spacing:-.03em}.label{font-size:12px;color:var(--muted)}
-    nav{display:flex;gap:4px;overflow:auto;padding:16px 0}.tab{border:0;background:transparent;padding:8px 12px;border-radius:9px;cursor:pointer;color:var(--muted)}
-    .tab.active{background:var(--accent);color:#fff}.hidden{display:none!important}
-    input,textarea,select,button{font:inherit}input,textarea,select{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:#fff;color:var(--text)}
-    textarea{min-height:120px;resize:vertical}button{border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px 12px;cursor:pointer}
-    button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button.danger{color:var(--danger)}button:disabled{opacity:.45;cursor:not-allowed}
-    table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
-    .pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:2px 8px;font-size:12px}.pill.ok{color:var(--ok);border-color:#b8dcc9}.pill.bad{color:var(--danger);border-color:#e8c0c0}
-    .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}.thumb{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}.thumb img{display:block;width:100%;height:150px;object-fit:cover;background:#eee}.thumb div{padding:8px 10px;font-size:11px;color:var(--muted)}
-    .section{margin-top:16px}.section h2{font-size:14px;margin:0 0 10px}.split{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}.settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.settings-grid .wide{grid-column:1/-1}@media(max-width:800px){.split{grid-template-columns:1fr}main{padding:16px}.settings-grid{grid-template-columns:1fr}.settings-grid .wide{grid-column:auto}}
-    #toast{position:fixed;right:20px;bottom:20px;max-width:360px;background:#1d1d1b;color:#fff;padding:10px 14px;border-radius:10px;opacity:0;pointer-events:none;transition:.2s}#toast.show{opacity:1}
+    :root{
+      --bg:#f4f6f8;--panel:#fff;--line:#d9dee5;--text:#17202a;--muted:#647180;
+      --accent:#0f766e;--accent-strong:#115e59;--danger:#b42318;--warning:#b54708;
+      --success:#067647;--blue:#175cd3;--soft:#eef2f5;--shadow:0 1px 2px rgba(16,24,40,.06)
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+    button,input,select,textarea{font:inherit}
+    button{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:6px;min-height:34px;padding:6px 12px;cursor:pointer}
+    button:hover{border-color:#aeb7c2;background:#fafbfc}
+    button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+    button.primary:hover{background:var(--accent-strong)}
+    button.danger{color:var(--danger);border-color:#efc9c5}
+    button:disabled{opacity:.45;cursor:not-allowed}
+    input,select,textarea{width:100%;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text);padding:8px 10px;outline:none}
+    input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(15,118,110,.1)}
+    textarea{min-height:112px;resize:vertical}
+    label{display:grid;gap:5px;color:#344054;font-size:13px}
+    .app-header{height:58px;padding:0 22px;display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.96);position:sticky;top:0;z-index:20}
+    .brand{display:flex;align-items:baseline;gap:10px;min-width:0}
+    .brand strong{font-size:17px;white-space:nowrap}
+    .brand span{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .header-tools{display:flex;align-items:center;gap:8px}
+    .status-dot{width:8px;height:8px;border-radius:50%;background:#98a2b3;display:inline-block}
+    .status-dot.ok{background:var(--success)}.status-dot.bad{background:var(--danger)}
+    .muted{color:var(--muted)}.small{font-size:12px}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+    .login-wrap{min-height:calc(100vh - 58px);display:grid;place-items:center;padding:24px}
+    .login-panel{width:min(420px,100%);background:#fff;border:1px solid var(--line);border-radius:8px;padding:24px;box-shadow:var(--shadow)}
+    .login-panel h1{font-size:22px;margin:0 0 6px}.login-panel p{margin:0 0 20px}
+    .app-shell{display:grid;grid-template-columns:190px minmax(0,1fr);align-content:start;min-height:calc(100vh - 58px)}
+    .sidebar{border-right:1px solid var(--line);background:#fbfcfd;padding:14px 10px}
+    .nav{display:grid;gap:3px;position:sticky;top:72px}
+    .nav button{text-align:left;border-color:transparent;background:transparent;color:#475467;min-height:38px}
+    .nav button.active{background:#e7f4f1;color:var(--accent-strong);font-weight:650}
+    .content{padding:20px 24px 36px;min-width:0}
+    .page-head{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;margin-bottom:16px}
+    .page-head h1{font-size:22px;line-height:1.2;margin:0 0 3px}.page-head p{margin:0}
+    .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .stats-grid{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;margin-bottom:14px}
+    .metric{background:#fff;border:1px solid var(--line);border-radius:8px;padding:13px;box-shadow:var(--shadow)}
+    .metric .label{font-size:12px;color:var(--muted)}.metric .value{font-size:24px;font-weight:700;margin-top:2px}
+    .panel{background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);overflow:hidden}
+    .panel-head{padding:12px 14px;border-bottom:1px solid #eaecf0;display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .panel-body{padding:14px}
+    .overview-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}
+    .kv{display:grid;grid-template-columns:150px minmax(0,1fr);border-top:1px solid #eaecf0}
+    .kv:first-child{border-top:0}.kv dt,.kv dd{margin:0;padding:10px 12px}.kv dt{color:var(--muted)}.kv dd{font-weight:550;word-break:break-word}
+    .table-wrap{overflow:auto}
+    table{width:100%;border-collapse:collapse;min-width:860px}
+    th,td{text-align:left;padding:10px 11px;border-bottom:1px solid #eaecf0;vertical-align:middle}
+    th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);background:#f9fafb;white-space:nowrap}
+    tr:last-child td{border-bottom:0}
+    .pill{display:inline-flex;align-items:center;border-radius:999px;padding:2px 8px;font-size:12px;border:1px solid var(--line);white-space:nowrap}
+    .pill.ok{color:var(--success);border-color:#abefc6;background:#ecfdf3}
+    .pill.warn{color:var(--warning);border-color:#fedf89;background:#fffaeb}
+    .pill.bad{color:var(--danger);border-color:#fecdca;background:#fef3f2}
+    .pill.off{color:#475467;background:#f2f4f7}
+    .actions{display:flex;gap:6px;flex-wrap:wrap}.actions button{min-height:30px;padding:4px 9px;font-size:12px}
+    .restore-time{min-width:170px}.restore-time .small{margin-top:4px;white-space:nowrap}
+    .empty{padding:38px 18px;text-align:center;color:var(--muted)}
+    .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    .form-grid .wide{grid-column:1/-1}
+    .form-actions{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
+    .filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px;margin-bottom:12px}
+    dialog{width:min(620px,calc(100vw - 30px));border:1px solid var(--line);border-radius:8px;padding:0;box-shadow:0 24px 70px rgba(16,24,40,.22)}
+    dialog::backdrop{background:rgba(15,23,42,.36)}
+    .dialog-head{padding:15px 18px;border-bottom:1px solid #eaecf0;display:flex;justify-content:space-between;align-items:center}
+    .dialog-head h2{font-size:17px;margin:0}.dialog-body{padding:18px}.dialog-foot{padding:13px 18px;border-top:1px solid #eaecf0;display:flex;justify-content:flex-end;gap:8px}
+    .secret{display:block;padding:11px;border:1px solid #fecdca;border-radius:6px;background:#fffbfa;word-break:break-all;font-family:ui-monospace,Consolas,monospace}
+    #toast{position:fixed;right:18px;bottom:18px;z-index:80;max-width:380px;background:#17202a;color:#fff;padding:10px 13px;border-radius:7px;opacity:0;transform:translateY(8px);pointer-events:none;transition:.18s}
+    #toast.show{opacity:1;transform:none}
+    .hidden{display:none!important}
+    @media(max-width:1100px){.stats-grid{grid-template-columns:repeat(3,minmax(120px,1fr))}.overview-grid{grid-template-columns:1fr}}
+    @media(max-width:760px){
+      .app-header{padding:0 14px}.brand span{display:none}
+      .app-shell{grid-template-columns:1fr}.sidebar{border-right:0;border-bottom:1px solid var(--line);padding:8px}
+      .nav{display:flex;overflow:auto;position:static}.nav button{white-space:nowrap}
+      .content{padding:16px 12px 30px}.page-head{align-items:flex-start;flex-direction:column}
+      .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.form-grid{grid-template-columns:1fr}.form-grid .wide{grid-column:auto}
+      .filters{grid-template-columns:1fr}.kv{grid-template-columns:120px minmax(0,1fr)}
+    }
   </style>
 </head>
 <body>
-<header>
-  <div><h1>chatgpt2api <span class="muted">/ go</span></h1></div>
-  <div class="row"><span id="authState" class="pill">未连接</span><button id="logoutBtn" class="hidden">清除密钥</button></div>
+<header class="app-header">
+  <div class="brand"><strong>ChatGPT2API</strong><span>Image Gateway Console</span></div>
+  <div class="header-tools">
+    <span class="small muted"><span id="connDot" class="status-dot"></span> <span id="connText">未连接</span></span>
+    <button id="logoutBtn" class="hidden">退出</button>
+  </div>
 </header>
-<main>
-  <div id="loginPanel" class="card" style="max-width:620px;margin:40px auto">
-    <h2 style="margin-top:0">管理密钥</h2>
-    <p class="muted">所有管理请求都需要密钥。密钥只保存在当前浏览器会话中，不会写入 localStorage。</p>
-    <input id="managementKey" type="password" placeholder="输入 remote-management.secret-key" autocomplete="off">
-    <div class="row" style="margin-top:10px"><button class="primary" id="loginBtn">连接管理台</button><span id="keyHint" class="muted"></span></div>
-  </div>
-  <div id="app" class="hidden">
-    <nav id="tabs"></nav>
-    <section id="view-overview" class="view"></section>
-    <section id="view-generate" class="view hidden"></section>
-    <section id="view-accounts" class="view hidden"></section>
-    <section id="view-images" class="view hidden"></section>
-    <section id="view-keys" class="view hidden"></section>
-    <section id="view-settings" class="view hidden"></section>
-  </div>
-</main>
+
+<div id="loginView" class="login-wrap">
+  <form id="loginForm" class="login-panel">
+    <h1>管理控制台</h1>
+    <p class="muted">使用管理密钥进入生图网关控制台。</p>
+    <label>管理密钥<input id="managementKey" type="password" autocomplete="off" required></label>
+    <div class="form-actions"><button class="primary" type="submit">登录</button></div>
+  </form>
+</div>
+
+<div id="appView" class="app-shell hidden">
+  <aside class="sidebar">
+    <nav id="nav" class="nav">
+      <button data-view="overview" class="active">概览</button>
+      <button data-view="accounts">账号池</button>
+      <button data-view="keys">API Key</button>
+      <button data-view="settings">运行设置</button>
+      <button data-view="logs">日志</button>
+    </nav>
+  </aside>
+  <main class="content">
+    <section id="view-overview"></section>
+    <section id="view-accounts" class="hidden"></section>
+    <section id="view-keys" class="hidden"></section>
+    <section id="view-settings" class="hidden"></section>
+    <section id="view-logs" class="hidden"></section>
+  </main>
+</div>
+
+<dialog id="modal">
+  <div class="dialog-head"><h2 id="modalTitle"></h2><button type="button" id="modalClose">关闭</button></div>
+  <div id="modalBody" class="dialog-body"></div>
+  <div id="modalFoot" class="dialog-foot"></div>
+</dialog>
 <div id="toast"></div>
+
 <script>
-const $ = (s, root=document) => root.querySelector(s);
-const state = {key: sessionStorage.getItem("ch2a_mgmt") || "", tab: "overview", jobs: []};
-const tabs = [["overview","概览"],["generate","生图"],["accounts","账号池"],["images","图片"],["keys","API Key"],["settings","设置"]];
-function toast(msg){const el=$("#toast");el.textContent=msg;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),2600)}
-async function api(path, opts={}){
-  const headers = Object.assign({"Content-Type":"application/json","X-Management-Key":state.key}, opts.headers||{});
-  const res = await fetch(path,{...opts,headers});
-  const text = await res.text(); let data={}; try{data=text?JSON.parse(text):{}}catch{data={error:text}}
-  if(!res.ok) throw new Error(data.error?.message||data.error||data.detail||("HTTP "+res.status));
-  return data;
+const $=(selector,root=document)=>root.querySelector(selector);
+const esc=(value)=>String(value??"").replace(/[&<>"']/g,(char)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+const state={key:sessionStorage.getItem("ch2a_management_key")||"",view:"overview",accounts:[],accountQuery:"",accountStatus:"all",overviewTimer:null,logType:"request",accountEventAccount:"",logFilters:{owner:"",model:"",mode:"",status:"",start:"",end:""}};
+
+function toast(message){
+  const node=$("#toast"); node.textContent=message; node.classList.add("show");
+  clearTimeout(toast.timer); toast.timer=setTimeout(()=>node.classList.remove("show"),2600);
 }
-function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
-function renderTabs(){
-  $("#tabs").innerHTML=tabs.map(([id,label])=>`<button class="tab ${state.tab===id?"active":""}" data-tab="${id}">${label}</button>`).join("");
-  document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;showTab()});
-}
-function showTab(){renderTabs();document.querySelectorAll(".view").forEach(v=>v.classList.add("hidden"));$("#view-"+state.tab).classList.remove("hidden");loadTab();}
-async function loadTab(){
-  if(state.tab==="overview") await loadOverview();
-  if(state.tab==="generate") renderGenerate();
-  if(state.tab==="accounts") await loadAccounts();
-  if(state.tab==="images") await loadImages();
-  if(state.tab==="keys") await loadKeys();
-  if(state.tab==="settings") await loadSettings();
-}
-async function connect(key){
-  state.key=key.trim(); if(!state.key) return toast("请输入管理密钥");
-  try{await api("/api/status");sessionStorage.setItem("ch2a_mgmt",state.key);$("#loginPanel").classList.add("hidden");$("#app").classList.remove("hidden");$("#logoutBtn").classList.remove("hidden");$("#authState").textContent="已连接";$("#authState").className="pill ok";showTab();}
-  catch(e){toast(e.message);$("#authState").textContent="密钥无效";$("#authState").className="pill bad";}
-}
-async function loadOverview(){
-  try{const d=await api("/api/status");const s=d.stats||{};$("#view-overview").innerHTML=`
-    <div class="grid">
-      ${stat("账号",s.accounts_total)}${stat("可用",s.accounts_active)}${stat("限流",s.accounts_limited)}${stat("剩余额度",s.quota_total)}
-      ${stat("运行任务",s.jobs_running)}${stat("排队任务",s.jobs_queued)}${stat("成功任务",s.jobs_succeeded)}${stat("图片",s.images_total)}
-    </div>
-    <div class="card section"><div class="row" style="justify-content:space-between"><div class="label">运行信息</div><button class="primary" onclick="loadTab()">刷新</button></div>
-    <p class="muted">图片 worker: ${esc(d.config?.image_workers)} · API Key: ${esc(d.config?.api_keys)}</p></div>`;}catch(e){$("#view-overview").innerHTML=`<div class="card">${esc(e.message)}</div>`}
-}
-function stat(label,value){return `<div class="card"><div class="label">${label}</div><div class="stat">${esc(value??0)}</div></div>`}
-function renderGenerate(){
-  $("#view-generate").innerHTML=`<div class="split"><div class="card"><h2>新建图片任务</h2>
-    <label class="label">提示词</label><textarea id="genPrompt" placeholder="描述你想生成的图片...">一只漂浮在太空里的猫</textarea>
-    <div class="row" style="margin-top:10px"><select id="genModel" style="min-width:210px;flex:1"><option value="gpt-image-2" selected>gpt-image-2 · GPT Image 2</option><option value="gpt-image-2.5">gpt-image-2.5 · GPT Image 2.5</option></select><select id="genSize" style="width:190px"><option value="1024x1024">1024x1024 · 1:1</option><option value="1024x1536">1024x1536 · 2:3</option><option value="1536x1024">1536x1024 · 3:2</option><option value="1024x1365">1024x1365 · 3:4</option><option value="1365x1024">1365x1024 · 4:3</option><option value="1088x1920">1088x1920 · 9:16</option><option value="1920x1088">1920x1088 · 16:9</option><option value="2048x2048">2048x2048 · 1:1 2K</option><option value="2560x1440">2560x1440 · 16:9 2K</option><option value="1440x2560">1440x2560 · 9:16 2K</option><option value="3840x2160">3840x2160 · 16:9 4K</option><option value="2160x3840">2160x3840 · 9:16 4K</option><option value="auto">auto</option></select><select id="genQuality" style="width:140px"><option value="auto">auto · 自动</option><option value="low">low · 低</option><option value="medium">medium · 中</option><option value="high">high · 高</option></select><button class="primary" id="genBtn">提交任务</button></div><p id="genModelHint" class="muted" style="margin:6px 0 0"></p>
-    <div class="section"><label class="label">参考图编辑（可选，上传后按编辑模式提交）</label><input id="editFiles" type="file" accept="image/*" multiple style="padding:7px"><button id="editBtn" style="margin-top:8px">提交编辑任务</button></div>
-    <p class="muted">低配模式默认串行执行，队列按顺序处理。编辑任务会把参考图保存在本地 data/uploads。</p></div>
-    <div class="card"><h2>任务状态</h2><div id="genResult" class="muted">暂无任务</div></div></div>
-    <div class="card section"><h2>最近任务</h2><div id="genJobs"></div></div>`;
-  $("#genBtn").onclick=submitGenerate; $("#editBtn").onclick=submitEdit; loadGenerationModels(); loadJobs();
-}
-async function loadGenerationModels(){
-  const select=$("#genModel"); if(!select)return;
-  try{const d=await api("/api/models");const rows=d.items||[];select.innerHTML=rows.map(m=>`<option value="${esc(m.id)}" ${m.id===d.default_model?"selected":""}>${esc(m.id)}${m.title&&m.title!==m.id?" · "+esc(m.title):""}</option>`).join("");$("#genModelHint").textContent=`图片模型 ${rows.length} 个`;}
-  catch(e){select.innerHTML=`<option value="gpt-image-2" selected>gpt-image-2 · GPT Image 2</option><option value="gpt-image-2.5">gpt-image-2.5 · GPT Image 2.5</option>`;$("#genModelHint").textContent="模型列表加载失败，使用内置选项";toast(e.message)}
-}
-async function submitGenerate(){
-  const prompt=$("#genPrompt").value.trim(); if(!prompt)return toast("请输入提示词");
-  $("#genBtn").disabled=true;
-  try{const job=await api("/api/image-tasks/generations",{method:"POST",body:JSON.stringify({prompt,model:$("#genModel").value,size:$("#genSize").value,quality:$("#genQuality").value,client_task_id:"ui-"+Date.now()})});
-    $("#genResult").innerHTML=`<div class="pill">${esc(job.status)}</div><p class="muted">任务 ${esc(job.id)} 已提交，正在等待...</p>`; await pollJob(job.id);}
-  catch(e){toast(e.message)}finally{$("#genBtn").disabled=false}
-}
-async function submitEdit(){
-  const prompt=$("#genPrompt").value.trim(); const files=$("#editFiles").files; if(!prompt)return toast("请输入提示词"); if(!files||!files.length)return toast("请选择参考图");
-  const form=new FormData(); form.append("prompt",prompt); form.append("model",$("#genModel").value); form.append("size",$("#genSize").value); form.append("quality",$("#genQuality").value); form.append("client_task_id","edit-ui-"+Date.now());
-  for(const f of files)form.append("image",f);
-  $("#editBtn").disabled=true;
-  try{const res=await fetch("/api/image-tasks/edits",{method:"POST",headers:{"X-Management-Key":state.key},body:form});const job=await res.json();if(!res.ok)throw new Error(job.error||"edit failed");$("#genResult").innerHTML=`<div class="pill">${esc(job.status)}</div><p class="muted">编辑任务 ${esc(job.id)} 已提交...</p>`;await pollJob(job.id)}catch(e){toast(e.message)}finally{$("#editBtn").disabled=false}
-}
-async function pollJob(id){
-  for(let i=0;i<120;i++){await new Promise(r=>setTimeout(r,1000));const d=await api("/api/image-tasks");const job=(d.items||[]).find(x=>x.id===id);if(!job)continue;
-    if(job.status==="succeeded"){renderJob(job,true);loadJobs();return}
-    if(job.status==="failed"||job.status==="canceled"){renderJob(job,true);loadJobs();return}
-    $("#genResult").innerHTML=`<div class="pill">${esc(job.progress||job.status)}</div><p class="muted">任务 ${esc(job.id)} 处理中...</p>`;
+
+async function api(path,options={}){
+  const headers=Object.assign({"Content-Type":"application/json","X-Management-Key":state.key},options.headers||{});
+  const response=await fetch(path,{...options,headers});
+  const type=response.headers.get("content-type")||"";
+  const payload=type.includes("application/json")?await response.json():await response.text();
+  if(response.status===401){logout();throw new Error("管理密钥无效");}
+  if(!response.ok){
+    const error=payload?.error;
+    throw new Error(typeof error==="string"?error:error?.message||`HTTP ${response.status}`);
   }
-  toast("任务仍在后台运行，可稍后刷新");
+  return payload;
 }
-function renderJob(job,big){
-  const html=`<div class="row" style="align-items:flex-start">${(job.images||[]).map(img=>`<a href="${esc(img.url)}" target="_blank"><img src="${esc(img.url)}" style="width:180px;height:180px;object-fit:cover;border-radius:10px;border:1px solid var(--line)"></a>`).join("")}
-    <div><div class="pill ${job.status==="succeeded"?"ok":job.status==="failed"?"bad":""}">${esc(job.status)}</div><p class="muted">${esc(job.error||job.progress||job.model||"")}</p>${job.error?`<p class="muted">${esc(job.error)}</p>`:""}</div></div>`;
-  if(big)$("#genResult").innerHTML=html;
+
+function setConnection(ok,text){
+  $("#connDot").className=`status-dot ${ok?"ok":"bad"}`;
+  $("#connText").textContent=text;
 }
-async function loadJobs(){
-  try{const d=await api("/api/image-tasks");const rows=(d.items||[]).slice(0,12);$("#genJobs").innerHTML=rows.length?`<table><tr><th>状态</th><th>模型</th><th>时间</th><th>操作</th></tr>${rows.map(j=>`<tr><td><span class="pill ${j.status==="succeeded"?"ok":j.status==="failed"?"bad":""}">${esc(j.status)}</span></td><td>${esc(j.model)}</td><td class="muted">${esc(j.created_at)}</td><td><button onclick="showJob('${esc(j.id)}')">查看</button></td></tr>`).join("")}</table>`:"<p class='muted'>暂无任务</p>";}
-  catch(e){$("#genJobs").textContent=e.message}
+
+function logout(){
+  state.key=""; sessionStorage.removeItem("ch2a_management_key");
+  clearInterval(state.overviewTimer); state.overviewTimer=null;
+  $("#appView").classList.add("hidden"); $("#logoutBtn").classList.add("hidden");
+  $("#loginView").classList.remove("hidden"); setConnection(false,"未连接");
 }
-function showJob(id){api("/api/image-tasks").then(d=>{const j=(d.items||[]).find(x=>x.id===id);if(j)renderJob(j,true)}).catch(e=>toast(e.message))}
+
+async function login(key){
+  state.key=key.trim();
+  await api("/auth/login",{method:"POST",body:"{}",headers:{"X-Management-Key":state.key}});
+  sessionStorage.setItem("ch2a_management_key",state.key);
+  $("#loginView").classList.add("hidden"); $("#appView").classList.remove("hidden");
+  $("#logoutBtn").classList.remove("hidden"); setConnection(true,"已连接");
+  await switchView("overview");
+}
+
+function modal(title,body,actions=[]){
+  $("#modalTitle").textContent=title; $("#modalBody").innerHTML=body;
+  const foot=$("#modalFoot"); foot.innerHTML="";
+  actions.forEach((item)=>{
+    const button=document.createElement("button");
+    button.textContent=item.label;
+    if(item.primary) button.className="primary";
+    if(item.danger) button.className="danger";
+    button.onclick=item.onClick;
+    foot.appendChild(button);
+  });
+  $("#modal").showModal();
+}
+
+async function switchView(view){
+  state.view=view;
+  document.querySelectorAll("#nav button").forEach((button)=>button.classList.toggle("active",button.dataset.view===view));
+  ["overview","accounts","keys","settings","logs"].forEach((name)=>$(`#view-${name}`).classList.toggle("hidden",name!==view));
+  clearInterval(state.overviewTimer); state.overviewTimer=null;
+  if(view==="overview"){await loadOverview();state.overviewTimer=setInterval(()=>loadOverview(true),15000);}
+  if(view==="accounts") await loadAccounts();
+  if(view==="keys") await loadKeys();
+  if(view==="settings") await loadSettings();
+  if(view==="logs") await loadLogs();
+}
+
+async function loadOverview(quiet=false){
+  try{
+    const data=await api("/api/status");
+    const stats=data.stats||{}, runtime=data.runtime||{}, solver=data.solver||{};
+    setConnection(true,"已连接");
+    $("#view-overview").innerHTML=`
+      <div class="page-head"><div><h1>概览</h1><p class="muted">账号、额度、任务和运行环境</p></div><div class="toolbar"><button id="refreshOverview">刷新</button></div></div>
+      <div class="stats-grid">
+        ${metric("可用账号",stats.accounts_active||0)}
+        ${metric("剩余额度",stats.quota_total||0)}
+        ${metric("运行请求",runtime.active_requests||0)}
+        ${metric("排队请求",runtime.queued_requests||0)}
+        ${metric("今日生成",stats.images_today||0)}
+        ${metric("今日失败",stats.requests_failed_today||0)}
+      </div>
+      <div class="overview-grid">
+        <section class="panel"><div class="panel-head"><strong>运行状态</strong><span class="muted small">${Number(runtime.uptime_seconds||0)} 秒</span></div><dl class="kv">
+          ${kv("账号总数",stats.accounts_total||0)}${kv("限流账号",stats.accounts_limited||0)}
+          ${kv("异常账号",stats.accounts_error||0)}${kv("禁用账号",stats.accounts_disabled||0)}
+          ${kv("今日请求",stats.requests_today||0)}${kv("今日平均耗时",`${Number(stats.request_duration_avg_today_ms||0).toFixed(0)} ms`)}
+          ${kv("临时文件",stats.temporary_files||0)}${kv("临时存储",formatBytes(stats.temporary_bytes||0))}
+        </dl></section>
+        <section class="panel"><div class="panel-head"><strong>Solver</strong><span class="pill ${solver.ready?"ok":"bad"}">${solver.ready?"就绪":"未就绪"}</span></div><dl class="kv">
+          ${kv("浏览器",solver.browser_version||"—")}${kv("路径",solver.browser_path||"—")}
+          ${kv("时区",solver.timezone||"—")}${kv("最近错误",solver.last_error||"—")}
+        </dl></section>
+      </div>`;
+    $("#refreshOverview").onclick=()=>loadOverview(false);
+  }catch(error){if(!quiet)toast(error.message);setConnection(false,"连接异常");}
+}
+
+function metric(label,value){return `<div class="metric"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div></div>`}
+function kv(label,value){return `<dt>${esc(label)}</dt><dd>${esc(value)}</dd>`}
+function formatBytes(value){const number=Number(value||0);if(number>=1024*1024*1024)return`${(number/1024/1024/1024).toFixed(2)} GB`;if(number>=1024*1024)return`${(number/1024/1024).toFixed(2)} MB`;if(number>=1024)return`${(number/1024).toFixed(1)} KB`;return`${number} B`}
+
+function formatRestoreAt(value){
+  const raw=String(value||"").trim();
+  if(!raw)return{relative:"—",absolute:"",kind:"off"};
+  let date;
+  if(/^\d+(?:\.\d+)?$/.test(raw)){
+    let timestamp=Number(raw);
+    if(timestamp<100000000000)timestamp*=1000;
+    date=new Date(timestamp);
+  }else{
+    date=new Date(raw);
+  }
+  if(Number.isNaN(date.getTime()))return{relative:raw,absolute:"",kind:"off"};
+  const pad=(number)=>String(number).padStart(2,"0");
+  const absolute=`${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const diff=date.getTime()-Date.now();
+  if(diff<=0)return{relative:"已到恢复时间",absolute,kind:"ok"};
+  const totalMinutes=Math.ceil(diff/60000);
+  if(totalMinutes<60)return{relative:`${totalMinutes} 分钟后`,absolute,kind:"warn"};
+  const totalHours=Math.floor(totalMinutes/60);
+  if(totalHours<24)return{relative:`${totalHours} 小时 ${totalMinutes%60} 分后`,absolute,kind:"warn"};
+  const days=Math.floor(totalHours/24);
+  return{relative:`${days} 天 ${totalHours%24} 小时后`,absolute,kind:"warn"};
+}
+
 async function loadAccounts(){
-  try{const d=await api("/api/accounts");const rows=d.items||[];$("#view-accounts").innerHTML=`
-    <div class="card"><div class="row" style="justify-content:space-between"><div><h2>账号池</h2><span class="muted">共 ${rows.length} 个账号</span></div><div class="row"><button id="refreshAll">刷新全部</button><button id="importDir">导入 auth-dir</button><button id="exportAll">导出 JSON</button></div></div></div>
-    <div class="card section"><h2>导入 Access Token / JSON</h2><p class="muted">支持每行一个 access_token，也支持直接粘贴完整账号 JSON；JSON 可来自账号导出、accounts/items/data 包装或 tokens 数组。</p><input id="importJsonFile" type="file" accept=".json,application/json" style="padding:7px"><textarea id="importTokens" placeholder="每行一个 access_token，或粘贴完整 JSON"></textarea><div class="row" style="margin-top:10px"><button class="primary" id="importBtn">导入并刷新</button><button id="importJsonBtn">导入 JSON 文件</button></div></div>
-    <div class="card section"><h2>账号列表</h2>${rows.length?`<table><tr><th>邮箱 / ID</th><th>类型</th><th>状态</th><th>额度</th><th>代理</th><th>最近使用</th><th>操作</th></tr>${rows.map(a=>`<tr><td><div>${esc(a.email||"-")}</div><div class="muted" style="font-size:11px">${esc(a.id)}</div></td><td>${esc(a.type)}</td><td><span class="pill ${a.status==="normal"?"ok":a.status==="error"?"bad":""}">${esc(a.status)}</span></td><td>${esc(a.quota)}</td><td class="muted">${esc(a.proxy||"-")}</td><td class="muted">${esc(a.last_used_at||"-")}</td><td><button onclick="editAccount('${esc(a.id)}','${esc(a.status)}','${esc(a.proxy||"")}')">编辑</button> <button onclick="refreshAccount('${esc(a.id)}')">刷新</button> <button class="danger" onclick="deleteAccount('${esc(a.id)}')">删除</button></td></tr>`).join("")}</table>`:"<p class='muted'>暂无账号，先导入 Token。</p>"}</div>`;
-    $("#refreshAll").onclick=()=>refreshAccounts([]);$("#importDir").onclick=importDir;$("#exportAll").onclick=exportAccounts;$("#importBtn").onclick=importTokens;$("#importJsonBtn").onclick=importJsonFile;}catch(e){$("#view-accounts").innerHTML=`<div class="card">${esc(e.message)}</div>`}
+  try{
+    const data=await api("/api/accounts");
+    state.accounts=data.items||[];
+    $("#view-accounts").innerHTML=`
+      <div class="page-head"><div><h1>账号池</h1><p class="muted">导入、刷新、禁用和代理配置</p></div><div class="toolbar">
+        <button class="primary" id="importAccounts">导入账号</button><button id="refreshAllAccounts">全部刷新</button><button id="exportAccounts">导出 JSON</button>
+      </div></div>
+      <div class="filters"><input id="accountQuery" placeholder="搜索邮箱、ID 或状态"><select id="accountStatus"><option value="all">全部状态</option><option value="normal">正常</option><option value="limited">限流</option><option value="error">异常</option><option value="disabled">禁用</option></select><button id="clearAccountFilters">清除筛选</button></div>
+      <section class="panel"><div id="accountsTable"></div></section>`;
+    $("#accountQuery").value=state.accountQuery; $("#accountStatus").value=state.accountStatus;
+    $("#accountQuery").oninput=(event)=>{state.accountQuery=event.target.value;renderAccountsTable();};
+    $("#accountStatus").onchange=(event)=>{state.accountStatus=event.target.value;renderAccountsTable();};
+    $("#clearAccountFilters").onclick=()=>{state.accountQuery="";state.accountStatus="all";loadAccounts();};
+    $("#importAccounts").onclick=openAccountImport;
+    $("#refreshAllAccounts").onclick=async()=>{await actionButton($("#refreshAllAccounts"),"刷新中",async()=>{const result=await api("/api/accounts/refresh",{method:"POST",body:"{}"});toast(`刷新完成 ${result.refreshed||0}`);await loadAccounts();});};
+    $("#exportAccounts").onclick=exportAccounts;
+    renderAccountsTable();
+  }catch(error){toast(error.message)}
 }
-async function importTokens(){const text=$("#importTokens").value.trim();if(!text)return toast("请输入 Token 或 JSON");try{const d=/^[\[{]/.test(text)?await api("/api/accounts/import-json",{method:"POST",body:text}):await api("/api/accounts",{method:"POST",body:JSON.stringify({tokens:text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean)})});toast(`新增 ${d.added||0}，刷新 ${d.refreshed||0}，失败 ${(d.errors||[]).length}`);loadAccounts()}catch(e){toast(e.message)}}
-async function importJsonFile(){const file=$("#importJsonFile").files?.[0];if(!file)return toast("请选择 JSON 文件");try{const text=await file.text();const d=await api("/api/accounts/import-json",{method:"POST",body:text});toast(`新增 ${d.added||0}，刷新 ${d.refreshed||0}，失败 ${(d.errors||[]).length}`);loadAccounts()}catch(e){toast(e.message)}}
-async function importDir(){const path=prompt("账号 JSON 目录（留空使用 config 的 auth-dir）","");if(path===null)return;try{const d=await api("/api/accounts/import-dir",{method:"POST",body:JSON.stringify({path})});toast(`新增 ${d.added||0}，刷新 ${d.refreshed||0}，失败 ${(d.errors||[]).length}`);loadAccounts()}catch(e){toast(e.message)}}
-async function refreshAccount(id){try{await api("/api/accounts/"+encodeURIComponent(id)+"/refresh",{method:"POST"});toast("已刷新");loadAccounts()}catch(e){toast(e.message)}}
-async function refreshAccounts(ids){try{const d=await api("/api/accounts/refresh",{method:"POST",body:JSON.stringify({ids})});toast(`刷新 ${d.refreshed||0} 个`);loadAccounts()}catch(e){toast(e.message)}}
-async function deleteAccount(id){if(!confirm("确认删除此账号？"))return;try{await api("/api/accounts",{method:"DELETE",body:JSON.stringify({ids:[id]})});toast("已删除");loadAccounts()}catch(e){toast(e.message)}}
-async function editAccount(id,status,proxy){const nextProxy=prompt("账号代理（留空走全局代理）",proxy||"");if(nextProxy===null)return;const nextStatus=prompt("状态：normal / limited / error / disabled",status||"normal");if(nextStatus===null)return;try{await api("/api/accounts/"+encodeURIComponent(id),{method:"PATCH",body:JSON.stringify({proxy:nextProxy,status:nextStatus})});toast("已更新");loadAccounts()}catch(e){toast(e.message)}}
-async function exportAccounts(){const res=await fetch("/api/accounts/export",{method:"POST",headers:{"Content-Type":"application/json","X-Management-Key":state.key},body:JSON.stringify({ids:[]})});if(!res.ok){toast("导出失败");return}const blob=await res.blob();const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="accounts.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
-async function loadImages(){try{const d=await api("/api/images");const rows=d.items||[];$("#view-images").innerHTML=`<div class="card"><h2>图片</h2><span class="muted">最近 ${rows.length} 张，图片文件不在浏览器内存中加载</span></div><div class="gallery section">${rows.map(i=>`<div class="thumb"><a href="${esc(i.url)}" target="_blank"><img src="${esc(i.url)}" loading="lazy"></a><div>${esc(i.width)}×${esc(i.height)} · ${esc(i.created_at)}</div></div>`).join("")}</div>`;}catch(e){$("#view-images").innerHTML=`<div class="card">${esc(e.message)}</div>`}}
-async function loadKeys(){try{const d=await api("/api/access/keys");const rows=d.items||[];$("#view-keys").innerHTML=`<div class="card"><div class="row" style="justify-content:space-between"><div><h2>客户端 API Key</h2><span class="muted">仅用于 /v1/* 和任务查询，不能访问管理接口。</span></div><button class="primary" id="createKey">创建 Key</button></div></div><div class="card section"><table><tr><th>名称</th><th>Key</th><th>状态</th><th>创建时间</th><th>操作</th></tr>${rows.map(k=>`<tr><td>${esc(k.name)}</td><td class="muted">${esc(k.masked)}</td><td><span class="pill ${k.enabled?"ok":"bad"}">${k.enabled?"启用":"停用"}</span></td><td class="muted">${esc(k.created_at||"-")}</td><td><button class="danger" onclick="deleteKey('${esc(k.name)}')">删除</button></td></tr>`).join("")}</table></div>`;$("#createKey").onclick=createKey;}catch(e){$("#view-keys").innerHTML=`<div class="card">${esc(e.message)}</div>`}}
-async function createKey(){const name=prompt("Key 名称","client");if(name===null)return;try{const d=await api("/api/access/keys",{method:"POST",body:JSON.stringify({name})});prompt("API Key 只显示一次，请复制保存：",d.key);loadKeys()}catch(e){toast(e.message)}}
-async function deleteKey(name){if(!confirm("删除此 Key？"))return;try{await api("/api/access/keys/"+encodeURIComponent(name),{method:"DELETE"});loadKeys()}catch(e){toast(e.message)}}
-async function loadSettings(){try{const d=await api("/api/access/settings");$("#view-settings").innerHTML=`<div class="card"><h2>访问设置</h2><p class="muted">以下连接信息来自当前配置文件，修改 host、port 或目录后需要重启进程。</p><div class="settings-grid"><div><label class="label">主机地址</label><input value="${esc(d.host)}" readonly></div><div><label class="label">端口</label><input id="settingsPort" type="number" min="1" max="65535" value="${esc(d.port)}"></div><div class="wide"><label class="label">上游代理 proxy-url</label><input id="settingsProxy" value="${esc(d.proxy_url||"")}" placeholder="http://127.0.0.1:10808"><span class="muted">留空表示直连。保存后新建请求和内置 solver 页面会使用该代理。</span></div><div class="wide"><label class="label">认证目录 auth-dir</label><input value="${esc(d.auth_dir)}" readonly></div><div class="wide"><label class="label">数据目录 data-dir</label><input value="${esc(d.data_dir)}" readonly></div><div class="wide"><label class="label">内置 Solver 浏览器</label><input value="${esc(d.sentinel_browser_path||"自动检测")}" readonly></div><div class="wide"><label class="label">内置 Solver 时区</label><input value="${esc(d.sentinel_timezone||"系统默认")}" readonly></div></div><div class="section"><div class="row"><button class="primary" id="saveAccess">保存</button></div></div><div class="section"><label class="label">轮换管理密钥</label><input id="newMgmt" type="password" placeholder="留空不修改"><button id="rotateMgmt" style="margin-top:8px">更新管理密钥</button></div></div>`;$("#saveAccess").onclick=saveAccess;$("#rotateMgmt").onclick=rotateMgmt;}catch(e){$("#view-settings").innerHTML=`<div class="card">${esc(e.message)}</div>`}}
-async function saveAccess(){const port=Number($("#settingsPort").value);if(!Number.isInteger(port)||port<1||port>65535)return toast("端口必须在 1-65535 之间");try{await api("/api/access/settings",{method:"PUT",body:JSON.stringify({port,proxy_url:$("#settingsProxy").value.trim()})});toast("已保存；端口需重启，代理已应用")}catch(e){toast(e.message)}}
-async function rotateMgmt(){const key=$("#newMgmt").value.trim();if(!key)return toast("请输入新密钥");try{await api("/api/access/settings",{method:"PUT",body:JSON.stringify({management_key:key})});state.key=key;sessionStorage.setItem("ch2a_mgmt",key);toast("管理密钥已更新");$("#newMgmt").value=""}catch(e){toast(e.message)}}
-$("#loginBtn").onclick=()=>connect($("#managementKey").value);
-$("#managementKey").addEventListener("keydown",e=>{if(e.key==="Enter")connect(e.target.value)});
-$("#logoutBtn").onclick=()=>{sessionStorage.removeItem("ch2a_mgmt");location.reload()};
-if(state.key){$("#managementKey").value=state.key;connect(state.key)}
+
+function renderAccountsTable(){
+  const query=state.accountQuery.trim().toLowerCase();
+  const items=state.accounts.filter((item)=>{
+    const haystack=`${item.email||""} ${item.user_id||""} ${item.id||""}`.toLowerCase();
+    return (!query||haystack.includes(query))&&(state.accountStatus==="all"||item.status===state.accountStatus);
+  });
+  const host=$("#accountsTable"); if(!host)return;
+  if(items.length===0){host.innerHTML=`<div class="empty">没有匹配账号</div>`;return}
+  host.innerHTML=`<div class="table-wrap"><table><thead><tr><th>账号</th><th>状态</th><th>套餐</th><th>额度</th><th>恢复时间</th><th>成功/失败</th><th>代理</th><th>操作</th></tr></thead><tbody>${items.map((item)=>`
+    <tr>
+      <td><div>${esc(item.email||"未命名")}</div><div class="small muted mono">${esc(item.id)}</div></td>
+      <td>${statusPill(item.status)}</td><td>${esc(item.type||"free")}</td><td>${Math.max(0,Number(item.quota||0))}</td>
+      <td class="restore-time">${restoreTimeHTML(item.restore_at)}</td><td>${Number(item.success||0)} / ${Number(item.fail||0)}</td>
+      <td class="small mono">${esc(item.proxy||"direct")}</td>
+      <td><div class="actions"><button data-action="refresh" data-id="${esc(item.id)}">刷新</button><button data-action="edit" data-id="${esc(item.id)}">编辑</button><button class="danger" data-action="delete" data-id="${esc(item.id)}">删除</button></div></td>
+    </tr>`).join("")}</tbody></table></div>`;
+  host.querySelectorAll("button[data-action]").forEach((button)=>button.onclick=()=>accountAction(button.dataset.action,button.dataset.id));
+}
+
+function restoreTimeHTML(value){
+  const formatted=formatRestoreAt(value);
+  if(!formatted.absolute)return esc(formatted.relative);
+  return `<span class="pill ${formatted.kind}">${esc(formatted.relative)}</span><div class="small muted">${esc(formatted.absolute)}</div>`;
+}
+
+function statusPill(status){
+  const map={normal:["正常","ok"],limited:["限流","warn"],error:["异常","bad"],disabled:["禁用","off"]};
+  const [label,kind]=map[status]||[status||"未知","off"];
+  return `<span class="pill ${kind}">${esc(label)}</span>`;
+}
+
+async function accountAction(action,id){
+  const item=state.accounts.find((account)=>account.id===id); if(!item)return;
+  if(action==="refresh"){
+    try{await api(`/api/accounts/${encodeURIComponent(id)}/refresh`,{method:"POST",body:"{}"});toast("账号已刷新");await loadAccounts();}catch(error){toast(error.message)} return;
+  }
+  if(action==="delete"){
+    if(!confirm(`删除账号 ${item.email||id}？`))return;
+    try{await api("/api/accounts",{method:"DELETE",body:JSON.stringify({ids:[id]})});toast("账号已删除");await loadAccounts();}catch(error){toast(error.message)} return;
+  }
+  modal("编辑账号",`
+    <div class="form-grid"><label>状态<select id="editAccountStatus">${["normal","limited","error","disabled"].map((value)=>`<option value="${value}" ${item.status===value?"selected":""}>${value}</option>`).join("")}</select></label>
+    <label>代理<input id="editAccountProxy" value="${esc(item.proxy||"")}" placeholder="http://127.0.0.1:10808"></label></div>`,
+    [{label:"保存",primary:true,onClick:async()=>{
+      try{await api(`/api/accounts/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status:$("#editAccountStatus").value,proxy:$("#editAccountProxy").value})});$("#modal").close();toast("账号已更新");await loadAccounts();}catch(error){toast(error.message)}
+    }}]);
+}
+
+function openAccountImport(){
+  modal("导入账号",`<div class="form-grid"><div class="wide"><label>账号 JSON 或 Access Token<textarea id="accountImportText" placeholder='{"access_token":"..."} 或每行一个 Access Token'></textarea></div><div class="wide"><label>选择 JSON 文件<input id="accountImportFile" type="file" accept=".json,application/json"></label></div></div>`,
+  [{label:"导入",primary:true,onClick:async()=>{
+    const text=$("#accountImportText").value.trim(); if(!text){toast("请输入账号内容");return}
+    try{
+      let result;
+      if(text.startsWith("{")||text.startsWith("[")) result=await api("/api/accounts/import-json",{method:"POST",body:text});
+      else result=await api("/api/accounts",{method:"POST",body:JSON.stringify({tokens:text.split(/\r?\n/).map((item)=>item.trim()).filter(Boolean)})});
+      $("#modal").close();toast(`新增 ${result.added||0}，跳过 ${result.skipped||0}`);await loadAccounts();
+    }catch(error){toast(error.message)}
+  }}]);
+  $("#accountImportFile").onchange=async(event)=>{
+    const file=event.target.files?.[0]; if(file)$("#accountImportText").value=await file.text();
+  };
+}
+
+async function exportAccounts(){
+  try{
+    const response=await fetch("/api/accounts/export",{method:"POST",headers:{"Content-Type":"application/json","X-Management-Key":state.key},body:"{}"});
+    if(!response.ok)throw new Error(`HTTP ${response.status}`);
+    const blob=await response.blob();const link=document.createElement("a");
+    link.href=URL.createObjectURL(blob);link.download="accounts.json";link.click();URL.revokeObjectURL(link.href);
+  }catch(error){toast(error.message)}
+}
+
+async function loadKeys(){
+  try{
+    const data=await api("/api/access/keys");
+    $("#view-keys").innerHTML=`<div class="page-head"><div><h1>API Key</h1><p class="muted">客户端访问凭据，配额由 New API 管理</p></div><button class="primary" id="createKey">创建 Key</button></div><section class="panel"><div class="table-wrap"><table><thead><tr><th>名称</th><th>状态</th><th>请求</th><th>失败</th><th>最后使用</th><th>操作</th></tr></thead><tbody>${(data.items||[]).map((item)=>`<tr><td><strong>${esc(item.name)}</strong><div class="small muted mono">${esc(item.masked)}</div></td><td><span class="pill ${item.enabled?"ok":"off"}">${item.enabled?"启用":"禁用"}</span></td><td>${Number(item.requests||0)}</td><td>${Number(item.failures||0)}</td><td class="small">${esc(item.last_used_at||"—")}</td><td><div class="actions"><button data-key-action="toggle" data-name="${esc(item.name)}" data-enabled="${item.enabled}">${item.enabled?"禁用":"启用"}</button><button data-key-action="rename" data-name="${esc(item.name)}">重命名</button><button class="danger" data-key-action="delete" data-name="${esc(item.name)}">删除</button></div></td></tr>`).join("")}</tbody></table></div></section>`;
+    $("#createKey").onclick=createKey;
+    document.querySelectorAll("button[data-key-action]").forEach((button)=>button.onclick=()=>keyAction(button.dataset.keyAction,button.dataset.name,button.dataset.enabled==="true"));
+  }catch(error){toast(error.message)}
+}
+
+async function createKey(){
+  const name=prompt("Key 名称"); if(name===null)return;
+  try{const result=await api("/api/access/keys",{method:"POST",body:JSON.stringify({name})});await loadKeys();modal("API Key 已创建",`<p class="muted">明文只显示一次。</p><code class="secret">${esc(result.key)}</code>`,[{label:"关闭",onClick:()=>$("#modal").close()}]);}catch(error){toast(error.message)}
+}
+
+async function keyAction(action,name,enabled){
+  if(action==="toggle"){
+    try{await api(`/api/access/keys/${encodeURIComponent(name)}`,{method:"PATCH",body:JSON.stringify({enabled:!enabled})});await loadKeys();}catch(error){toast(error.message)}return;
+  }
+  if(action==="rename"){
+    const next=prompt("新名称",name);if(next===null||next.trim()===name)return;
+    try{await api(`/api/access/keys/${encodeURIComponent(name)}`,{method:"PATCH",body:JSON.stringify({name:next.trim()})});await loadKeys();}catch(error){toast(error.message)}return;
+  }
+  if(action==="delete"&&confirm(`删除 API Key ${name}？`)){
+    try{await api(`/api/access/keys/${encodeURIComponent(name)}`,{method:"DELETE"});await loadKeys();}catch(error){toast(error.message)}
+  }
+}
+
+async function loadSettings(){
+  try{
+    const config=await api("/api/access/settings");
+    $("#view-settings").innerHTML=`<div class="page-head"><div><h1>运行设置</h1><p class="muted">配置保存到当前配置文件</p></div></div><section class="panel"><div class="panel-body">
+      <div class="form-grid">
+        ${field("监听地址","settingsHost",config.host,true)}${field("端口","settingsPort",config.port,false,"number")}
+        ${field("全局并发","settingsGlobalConcurrency",config.global_concurrency,false,"number")}${field("单账号并发","settingsAccountConcurrency",config.account_concurrency,false,"number")}
+        ${field("请求超时（秒）","settingsRequestTimeout",config.request_timeout_seconds,false,"number")}${field("临时 URL（秒）","settingsTempTTL",config.temporary_url_ttl_seconds,false,"number")}
+        ${field("日志保留（天）","settingsLogRetention",config.log_retention_days,false,"number")}${field("刷新间隔（分钟）","settingsRefreshInterval",config.refresh_interval_minutes,false,"number")}
+        ${field("公共基础 URL","settingsPublicBaseURL",config.public_base_url||"")}${field("默认上游模型","settingsUpstreamModel",config.default_upstream_model)}
+        ${field("全局代理","settingsProxyURL",config.proxy_url||"")}${field("Solver 浏览器","settingsBrowserPath",config.sentinel_browser_path||"")}
+        ${field("Solver 时区","settingsTimezone",config.sentinel_timezone||"")}
+        <label class="wide">自动移除无效账号<span><input id="settingsAutoRemoveInvalid" type="checkbox" style="width:auto;margin-right:7px" ${config.auto_remove_invalid_accounts?"checked":""}>Token 明确失效且无法刷新时删除账号</span></label>
+        <label class="wide">敏感词（每行一个）<textarea id="settingsSensitiveWords">${esc((config.sensitive_words||[]).join("\n"))}</textarea></label>
+        <label class="wide">轮换管理密钥<input id="settingsManagementKey" type="password" placeholder="留空不修改"></label>
+      </div><div class="form-actions"><button class="primary" id="saveSettings">保存设置</button></div>
+    </div></section>`;
+    $("#saveSettings").onclick=saveSettings;
+  }catch(error){toast(error.message)}
+}
+
+function field(label,id,value,readonly=false,type="text"){
+  return `<label>${esc(label)}<input id="${id}" type="${type}" value="${esc(value??"")}" ${readonly?"readonly":""}></label>`;
+}
+
+async function saveSettings(){
+  const payload={
+    port:Number($("#settingsPort").value),global_concurrency:Number($("#settingsGlobalConcurrency").value),
+    account_concurrency:Number($("#settingsAccountConcurrency").value),request_timeout_seconds:Number($("#settingsRequestTimeout").value),
+    temporary_url_ttl_seconds:Number($("#settingsTempTTL").value),log_retention_days:Number($("#settingsLogRetention").value),
+    refresh_interval_minutes:Number($("#settingsRefreshInterval").value),public_base_url:$("#settingsPublicBaseURL").value,
+    default_upstream_model:$("#settingsUpstreamModel").value,proxy_url:$("#settingsProxyURL").value,
+    sentinel_browser_path:$("#settingsBrowserPath").value,sentinel_timezone:$("#settingsTimezone").value,
+    auto_remove_invalid_accounts:$("#settingsAutoRemoveInvalid").checked,
+    sensitive_words:$("#settingsSensitiveWords").value.split(/\r?\n/).map((item)=>item.trim()).filter(Boolean),
+    management_key:$("#settingsManagementKey").value
+  };
+  await actionButton($("#saveSettings"),"保存中",async()=>{
+    try{
+      await api("/api/access/settings",{method:"PUT",body:JSON.stringify(payload)});
+      if(payload.management_key) {toast("设置已保存，请重新登录");logout();}
+      else {toast("设置已保存");await loadSettings();}
+    }catch(error){toast(error.message)}
+  });
+}
+
+async function loadLogs(){
+  try{
+    const settings=await api("/api/access/settings");
+    const typeSelector=`<select id="logType" style="max-width:180px"><option value="request" ${state.logType==="request"?"selected":""}>请求日志</option><option value="account" ${state.logType==="account"?"selected":""}>账号事件</option></select>`;
+    if(state.logType==="account"){
+      const params=new URLSearchParams({limit:"200"});
+      if(state.accountEventAccount)params.set("account_id",state.accountEventAccount);
+      const data=await api(`/api/account-events?${params}`);
+      const items=data.items||[];
+      $("#view-logs").innerHTML=`<div class="page-head"><div><h1>账号事件</h1><p class="muted">导入、刷新、Token、限流和禁用记录</p></div><div class="toolbar">${typeSelector}<button id="refreshLogs">刷新</button></div></div>
+        <div class="filters"><input id="accountEventAccount" placeholder="账号 ID" value="${esc(state.accountEventAccount)}"><button id="applyAccountEventFilter">筛选</button><button id="clearAccountEventFilter">清除</button></div>
+        <section class="panel"><div class="table-wrap"><table><thead><tr><th>时间</th><th>账号 ID</th><th>事件</th><th>详情</th></tr></thead><tbody>${items.length?items.map((item)=>`<tr><td class="small">${esc(item.created_at)}</td><td class="mono small">${esc(item.account_id)}</td><td>${esc(item.event)}</td><td>${esc(item.message||"—")}</td></tr>`).join(""):`<tr><td colspan="4"><div class="empty">暂无账号事件</div></td></tr>`}</tbody></table></div></section>`;
+      $("#logType").onchange=(event)=>{state.logType=event.target.value;loadLogs();};
+      $("#refreshLogs").onclick=loadLogs;
+      $("#applyAccountEventFilter").onclick=()=>{state.accountEventAccount=$("#accountEventAccount").value.trim();loadLogs();};
+      $("#clearAccountEventFilter").onclick=()=>{state.accountEventAccount="";loadLogs();};
+      return;
+    }
+    const params=new URLSearchParams({limit:"200"});
+    Object.entries(state.logFilters).forEach(([key,value])=>{if(value)params.set(key,value)});
+    const data=await api(`/api/logs?${params}`);
+    const items=data.items||[];
+    $("#view-logs").innerHTML=`<div class="page-head"><div><h1>请求日志</h1><p class="muted">保留时间 ${esc(settings.log_retention_days)} 天</p></div><div class="toolbar">${typeSelector}<button id="refreshLogs">刷新</button><button class="danger" id="deleteSelectedLogs" disabled>删除所选</button></div></div>
+      <div class="filters"><input id="logOwner" placeholder="API Key" value="${esc(state.logFilters.owner)}"><input id="logModel" placeholder="模型" value="${esc(state.logFilters.model)}"><select id="logMode"><option value="">全部模式</option><option value="generation">生成</option><option value="edit">编辑</option></select><select id="logStatus"><option value="">全部状态</option><option value="success">成功</option><option value="failed">失败</option></select><input id="logStart" type="date" value="${esc(state.logFilters.start)}"><input id="logEnd" type="date" value="${esc(state.logFilters.end)}"><button id="applyLogFilters">筛选</button><button id="clearLogFilters">清除</button></div>
+      <section class="panel"><div class="table-wrap"><table><thead><tr><th><input id="selectAllLogs" type="checkbox"></th><th>时间</th><th>Key</th><th>模式</th><th>模型</th><th>状态</th><th>图片</th><th>耗时</th><th>账号</th></tr></thead><tbody>${items.length?items.map((item)=>`<tr><td><input class="log-check" type="checkbox" value="${Number(item.id)}"></td><td class="small">${esc(item.created_at)}</td><td>${esc(item.owner||"—")}</td><td>${esc(item.mode||"—")}</td><td>${esc(item.model||"—")}</td><td><span class="pill ${Number(item.status)<400?"ok":"bad"}">${Number(item.status)}</span>${item.error?`<div class="small muted">${esc(item.error)}</div>`:""}</td><td>${Number(item.succeeded_images||0)}/${Number(item.requested_images||0)}</td><td>${Number(item.duration_ms||0)} ms</td><td class="small mono">${esc(item.account_ids||"—")}</td></tr>`).join(""):`<tr><td colspan="9"><div class="empty">暂无日志</div></td></tr>`}</tbody></table></div></section>`;
+    $("#logMode").value=state.logFilters.mode;$("#logStatus").value=state.logFilters.status;
+    $("#logType").onchange=(event)=>{state.logType=event.target.value;loadLogs();};
+    $("#refreshLogs").onclick=loadLogs;
+    $("#applyLogFilters").onclick=()=>{
+      state.logFilters={owner:$("#logOwner").value.trim(),model:$("#logModel").value.trim(),mode:$("#logMode").value,status:$("#logStatus").value,start:$("#logStart").value,end:$("#logEnd").value};
+      loadLogs();
+    };
+    $("#clearLogFilters").onclick=()=>{state.logFilters={owner:"",model:"",mode:"",status:"",start:"",end:""};loadLogs();};
+    $("#selectAllLogs").onchange=(event)=>document.querySelectorAll(".log-check").forEach((checkbox)=>{checkbox.checked=event.target.checked;syncLogDeleteButton();});
+    document.querySelectorAll(".log-check").forEach((checkbox)=>checkbox.onchange=syncLogDeleteButton);
+    $("#deleteSelectedLogs").onclick=deleteSelectedLogs;
+  }catch(error){toast(error.message)}
+}
+
+function syncLogDeleteButton(){
+  $("#deleteSelectedLogs").disabled=!document.querySelector(".log-check:checked");
+}
+
+async function deleteSelectedLogs(){
+  const ids=Array.from(document.querySelectorAll(".log-check:checked")).map((item)=>Number(item.value));
+  if(ids.length===0||!confirm(`删除 ${ids.length} 条日志？`))return;
+  try{await api("/api/logs/delete",{method:"POST",body:JSON.stringify({ids})});toast("日志已删除");await loadLogs();}catch(error){toast(error.message)}
+}
+
+async function actionButton(button,busyText,action){
+  const original=button.textContent;button.disabled=true;button.textContent=busyText;
+  try{await action()}finally{button.disabled=false;button.textContent=original}
+}
+
+$("#loginForm").onsubmit=async(event)=>{
+  event.preventDefault();
+  const button=event.submitter;button.disabled=true;
+  try{await login($("#managementKey").value);toast("登录成功");}
+  catch(error){toast(error.message);button.disabled=false;setConnection(false,"未连接");}
+};
+$("#logoutBtn").onclick=logout;
+$("#modalClose").onclick=()=>$("#modal").close();
+$("#modal").addEventListener("click",(event)=>{if(event.target===$("#modal"))$("#modal").close()});
+document.querySelectorAll("#nav button").forEach((button)=>button.onclick=()=>switchView(button.dataset.view));
+
+if(state.key){
+  login(state.key).catch(()=>{logout();toast("登录状态已失效");});
+}
 </script>
 </body>
 </html>

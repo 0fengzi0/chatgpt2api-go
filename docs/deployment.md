@@ -1,5 +1,8 @@
 # 部署与升级指南
 
+> 本文描述原 Python + Next.js 版本。Go 生图网关的部署方式见
+> [deploy/README.md](../deploy/README.md)。
+
 本文介绍 ChatGPT2API 的常见部署方式，以及后续升级项目时需要保留的数据和执行步骤。
 
 ## 部署前准备

@@ -23,6 +23,7 @@ import (
 	"github.com/0fengzi0/chatgpt2api-go/internal/account"
 	"github.com/0fengzi0/chatgpt2api-go/internal/config"
 	"github.com/0fengzi0/chatgpt2api-go/internal/store"
+	_ "github.com/gen2brain/webp"
 )
 
 const imageSystemHint = "picture_v2"
@@ -78,6 +79,14 @@ type requirements struct {
 }
 
 func (p *ChatGPT) Generate(ctx context.Context, req Request) (Result, error) {
+	result, err := p.generateOnce(ctx, req)
+	if err == nil || !isTokenInvalidError(err.Error()) || ctx.Err() != nil {
+		return result, err
+	}
+	return p.generateOnce(ctx, req)
+}
+
+func (p *ChatGPT) generateOnce(ctx context.Context, req Request) (out Result, retErr error) {
 	acct, release, err := p.accounts.Acquire(ctx)
 	if err != nil {
 		return Result{}, err
@@ -91,6 +100,16 @@ func (p *ChatGPT) Generate(ctx context.Context, req Request) (Result, error) {
 	defer func() {
 		markCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+		if retErr != nil && isTokenInvalidError(retErr.Error()) {
+			if strings.TrimSpace(acct.RefreshToken) == "" {
+				p.accounts.MarkCredentialError(markCtx, acct.ID, "access token is invalid and no refresh token is available")
+			} else if _, refreshErr := p.accounts.ForceRefreshToken(markCtx, acct); refreshErr != nil {
+				p.accounts.MarkCredentialError(markCtx, acct.ID, refreshErr.Error())
+			}
+		}
+		if retErr != nil && isRateLimitError(retErr.Error()) {
+			p.accounts.MarkLimited(markCtx, acct.ID, retErr.Error())
+		}
 		p.accounts.MarkResult(markCtx, acct.ID, success)
 	}()
 	cfg := p.config.Snapshot()
@@ -104,7 +123,7 @@ func (p *ChatGPT) Generate(ctx context.Context, req Request) (Result, error) {
 	uploaded := make([]map[string]any, 0, len(req.Images))
 	excluded := make(map[string]struct{})
 	for i, data := range req.Images {
-		ref, err := sess.uploadImage(ctx, data, fmt.Sprintf("image_%d.png", i+1))
+		ref, err := sess.uploadImage(ctx, data, fmt.Sprintf("image_%d%s", i+1, uploadExtension(data)))
 		if err != nil {
 			return Result{}, err
 		}
@@ -134,6 +153,9 @@ func (p *ChatGPT) Generate(ctx context.Context, req Request) (Result, error) {
 		req.Progress("preparing_conversation")
 	}
 	upstreamPrompt := buildImagePrompt(req.Prompt, req.Size, req.Quality)
+	if strings.EqualFold(strings.TrimSpace(req.Background), "transparent") {
+		upstreamPrompt += "\n\nUse a genuinely transparent background and preserve an alpha channel where the output format supports it."
+	}
 	conduit, err := sess.prepareConversation(ctx, upstreamPrompt, requ, upstreamModel, cfg)
 	if err != nil {
 		return Result{}, err
@@ -192,7 +214,12 @@ func (p *ChatGPT) Generate(ctx context.Context, req Request) (Result, error) {
 	if len(urls) == 0 {
 		return Result{}, errors.New("no downloadable image URL")
 	}
-	result := Result{MIME: "image/png", RevisedPrompt: req.Prompt}
+	result := Result{
+		MIME:          "image/png",
+		RevisedPrompt: req.Prompt,
+		AccountID:     acct.ID,
+		AccountEmail:  acct.Email,
+	}
 	for _, imageURL := range urls {
 		data, err := sess.download(ctx, imageURL, cfg.Image.MaxImageBytes)
 		if err != nil {
@@ -207,6 +234,40 @@ func (p *ChatGPT) Generate(ctx context.Context, req Request) (Result, error) {
 	}
 	success = true
 	return result, nil
+}
+
+func isTokenInvalidError(message string) bool {
+	text := strings.ToLower(message)
+	return strings.Contains(text, "http 401") ||
+		strings.Contains(text, "token_invalidated") ||
+		strings.Contains(text, "token revoked") ||
+		strings.Contains(text, "invalidated oauth token")
+}
+
+func isRateLimitError(message string) bool {
+	text := strings.ToLower(message)
+	return strings.Contains(text, "http 429") ||
+		strings.Contains(text, "too many requests") ||
+		strings.Contains(text, "rate_limit") ||
+		strings.Contains(text, "rate limit")
+}
+
+func uploadExtension(data []byte) string {
+	switch detectImageMIME(data) {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/webp":
+		return ".webp"
+	default:
+		return ".png"
+	}
+}
+
+func detectImageMIME(data []byte) string {
+	if len(data) >= 12 && string(data[:4]) == "RIFF" && string(data[8:12]) == "WEBP" {
+		return "image/webp"
+	}
+	return http.DetectContentType(data)
 }
 
 func buildImagePrompt(prompt, size, quality string) string {
@@ -226,9 +287,9 @@ func buildImagePrompt(prompt, size, quality string) string {
 
 func resolveImageModel(requestModel, configuredUpstream string) (string, error) {
 	switch strings.TrimSpace(requestModel) {
-	case "", "gpt-image-2", "gpt-image-2.5":
+	case "", "gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-sunburst", "gpt-image-2.5-flare":
 	default:
-		return "", fmt.Errorf("unsupported image model %q; use gpt-image-2 or gpt-image-2.5", requestModel)
+		return "", fmt.Errorf("unsupported image model %q", requestModel)
 	}
 	upstream := strings.TrimSpace(configuredUpstream)
 	if upstream == "" {
@@ -662,7 +723,7 @@ func (s *chatSession) uploadImage(ctx context.Context, data []byte, name string)
 	if err != nil {
 		return nil, fmt.Errorf("decode uploaded image: %w", err)
 	}
-	mime := http.DetectContentType(data)
+	mime := detectImageMIME(data)
 	body, _ := json.Marshal(map[string]any{
 		"file_name": name, "file_size": len(data), "use_case": "multimodal", "width": cfg.Width, "height": cfg.Height,
 	})

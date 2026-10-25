@@ -8,19 +8,19 @@ if (-not (Test-Path -LiteralPath $go)) {
     $go = $goCommand.Source
 }
 
-foreach ($arch in @("amd64", "arm64")) {
-    $target = Join-Path $dist ("release-" + $arch)
+foreach ($arch in @("amd64")) {
+    $target = Join-Path $dist ("release-image-gateway-" + $arch)
     New-Item -ItemType Directory -Path (Join-Path $target "deploy") -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $target "docs") -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $root "README-go.md") -Destination $target -Force
     Copy-Item -LiteralPath (Join-Path $root "config.example.yaml") -Destination $target -Force
     Copy-Item -Path (Join-Path $root "deploy\*") -Destination (Join-Path $target "deploy") -Recurse -Force
-    Copy-Item -Path (Join-Path $root "docs\turnstile-token-flow.md"), (Join-Path $root "docs\go-config.example.yaml") -Destination (Join-Path $target "docs") -Force
+    Copy-Item -Path (Join-Path $root "docs\turnstile-token-flow.md"), (Join-Path $root "docs\go-config.example.yaml"), (Join-Path $root "docs\image-gateway-requirements.md") -Destination (Join-Path $target "docs") -Force
 
     $env:CGO_ENABLED = "0"
     $env:GOOS = "linux"
     $env:GOARCH = $arch
-    & $go build -buildvcs=false -trimpath -ldflags="-s -w" -o (Join-Path $target "chatgpt2api") (Join-Path $root "cmd\chatgpt2api")
+    & $go build -tags nodynamic -buildvcs=false -trimpath -ldflags="-s -w" -o (Join-Path $target "chatgpt2api") (Join-Path $root "cmd\chatgpt2api")
     if ($LASTEXITCODE -ne 0) {
         throw "Linux $arch build failed"
     }

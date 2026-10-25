@@ -1,28 +1,39 @@
-# chatgpt2api-go
+# chatgpt2api-go Image Gateway
 
-这是 `feat/go-reimplementation` 分支上的轻量 Go 实现。它保留上游 Python 项目在 `main`
-分支不动，后续可以独立同步上游变更。
+这是 `feat/go-reimplementation` 分支上的单机生图 API 网关。
 
-当前目标是单操作员、低内存部署：
+网关只负责：
 
-- Go 标准库 HTTP 服务
-- SQLite 保存账号、任务和图片索引
-- 本地图片文件存储，签名 URL 下载
-- 单管理密钥访问管理端，独立客户端 API Key
-- 默认单图片 worker、单账号并发
+- OpenAI GPT Image 兼容 API。
+- ChatGPT 官网账号池和 `picture_v2` 生图链路。
+- 多 API Key、Token 自动刷新、账号调度、额度和并发控制。
+- Base64 或 10 分钟签名 URL 图片输出。
+- 极简账号与运行管理控制台。
+- 调用日志、健康检查和 Prometheus 指标。
+
+不包含在线画图、图片资产库、文本模型、Web Search、PPT/PSD、Codex 图片链路、CPA 或 Sub2API。
+
+## 系统要求
+
+- Go 1.26 或兼容版本。
+- Linux `amd64` 部署目标。
+- Chromium、Chrome 或 Edge，用于内置 Turnstile Solver。
+- 建议服务器至少 1 GB 内存。
 
 ## 构建
 
-需要 Go 1.26 或兼容版本：
-
 ```bash
-go build -trimpath -ldflags="-s -w" -o bin/chatgpt2api ./cmd/chatgpt2api
+go build -tags nodynamic -trimpath -ldflags="-s -w" \
+  -o bin/chatgpt2api ./cmd/chatgpt2api
 ```
 
-Linux `amd64` 和 `arm64` 包放在 `dist/`，包含主服务、部署文件和
-`SHA256SUMS.txt`。Windows 构建机可运行
-`powershell -ExecutionPolicy Bypass -File scripts/build_go_linux.ps1`
-重新生成两个架构的 tar.gz 和校验和。
+Linux amd64 发布包：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_go_linux.ps1
+```
+
+输出：`dist/chatgpt2api-image-gateway-linux-amd64.tar.gz`。
 
 ## 启动
 
@@ -31,184 +42,249 @@ cp config.example.yaml config.yaml
 ./bin/chatgpt2api -config config.yaml
 ```
 
-`data-dir` 和 `auth-dir` 支持相对路径，并相对配置文件所在目录解析。例如配置文件在
-`/www/wwwroot/chatgpt2api/config.yaml` 时，`./data` 会指向
-`/www/wwwroot/chatgpt2api/data`。
+首次启动会生成：
 
-Linux + systemd 部署可直接使用 [deploy/chatgpt2api.service](deploy/chatgpt2api.service)。
-服务的工作目录是 `/var/lib/chatgpt2api`，配置从 `/etc/chatgpt2api/config.yaml`
-读取。systemd 场景建议在配置里填写绝对路径
-`/var/lib/chatgpt2api/data`，避免数据写入只读的 `/etc` 目录。
-完整安装步骤见 [deploy/README.md](deploy/README.md)。
+- 管理密钥。
+- 默认客户端 API Key。
+- Cookie 和账号 Token 加密使用的 `signing-key`。
 
-第一次启动会生成管理密钥和默认客户端 API Key，并在 stdout 打印一次。配置文件中只会
-保存它们的哈希。管理端地址默认为：
+这些值只在首次启动时打印一次。配置文件中只保存管理密钥和客户端 Key 的哈希。
+
+管理端：
 
 ```text
 http://127.0.0.1:3000/admin/
 ```
 
-管理请求使用：
+## OpenAI API
+
+### 模型
 
 ```http
-X-Management-Key: <management-key>
+GET /v1/models
+GET /v1/models/{model}
 ```
 
-## 认证模型
+当前暴露：
 
-这是单操作员服务，没有用户表、角色、租户或管理端 Session。启动时只加载一个
-`remote-management.secret-key`，它同时代表管理员身份。配置文件中只保存 bcrypt 哈希；
-把明文写进配置文件时，进程启动后会就地替换为哈希。
+- `gpt-image-2`
+- `gpt-image-2.5`
+- `gpt-image-2.5-sunburst`
+- `gpt-image-2.5-flare`
 
-管理页面不创建 `admin_sessions`。浏览器只在当前标签页的 `sessionStorage` 中保存管理密钥，
-每次管理 API 请求都通过 `X-Management-Key`（或 `Authorization: Bearer`）发送。关闭标签页
-即丢失该前端状态；服务端没有需要清理的会话记录，也不需要额外的会话数据库。
+四个名称当前共用 ChatGPT 官网 `picture_v2` 链路。模型名称用于本地路由、日志和响应元数据，不表示四个不同底层模型。实际底层模型由 ChatGPT 官网决定。
 
-`GET/PUT /api/access/settings` 对应 `config.yaml` 或 `config.json` 中的以下字段，修改后
-原子写回同一份配置文件，重启后仍然生效：
-
-```yaml
-port: 3000
-proxy-url: "http://127.0.0.1:10808"
-remote-management:
-  secret-key: "$2a$..."
-```
-
-使用 `config.json` 时字段名改为下划线形式，例如 `remote_management.secret_key`。
-`proxy-url` 保存后会立即用于新的上游请求，并触发内置 Solver 浏览器重建；端口修改仍需重启进程。
-
-管理接口始终要求有效管理密钥。是否暴露到远程由监听地址、防火墙或反向代理决定。
-
-浏览器跨域白名单配置在 `cors.allowed-origins`。默认允许 `5ixf.com`、`isancha.com`
-及其 HTTPS 子域：
-
-```yaml
-cors:
-  allowed-origins:
-    - "https://5ixf.com"
-    - "https://www.5ixf.com"
-    - "https://*.5ixf.com"
-    - "https://isancha.com"
-    - "https://www.isancha.com"
-    - "https://*.isancha.com"
-```
-
-服务会回显请求的 `Origin` 并添加 `Vary: Origin`，不会使用不安全的固定 `*`。
-
-客户端 API Key 与管理密钥分离，只用于 `/v1/*` 和任务查询。API Key 以 SHA-256 哈希保存，
-在管理页创建时只显示一次明文。
-
-客户端调用 `/v1/*` 使用：
+### 文生图
 
 ```http
+POST /v1/images/generations
 Authorization: Bearer <api-key>
+Content-Type: application/json
 ```
 
-如果丢失了管理密钥，可以在本机重新设置，不需要清空账号数据：
+```json
+{
+  "model": "gpt-image-2",
+  "prompt": "A clean product photo of a ceramic cup",
+  "n": 1,
+  "size": "1024x1024",
+  "quality": "high",
+  "background": "opaque",
+  "moderation": "auto",
+  "output_format": "png",
+  "response_format": "b64_json"
+}
+```
+
+支持：
+
+- `n`：1 到 4。
+- `size`：`auto` 或 `宽x高`。
+- `quality`：`auto`、`low`、`medium`、`high`；2.5 名称还接受 `xhigh`、`max`。
+- `background`：`auto`、`opaque`、`transparent`。
+- `moderation`：`auto`、`low`。
+- `output_format`：`png`、`jpeg`、`webp`。
+- `output_compression`：JPEG 和 WebP 使用，范围 0 到 100。
+- `response_format`：`b64_json` 或 `url`。
+- `stream` 和 `partial_images`。
+- `safety_identifier`。
+
+未知参数返回 `400 unsupported_parameter`，不会被静默忽略。
+
+### 图片编辑
+
+```http
+POST /v1/images/edits
+Authorization: Bearer <api-key>
+Content-Type: multipart/form-data
+```
 
 ```bash
+curl http://127.0.0.1:3000/v1/images/edits \
+  -H "Authorization: Bearer $CHATGPT2API_KEY" \
+  -F "model=gpt-image-2" \
+  -F "prompt=Change the background to blue" \
+  -F "image[]=@input.png"
+```
+
+限制：
+
+- 1 到 4 张参考图。
+- PNG、JPEG、WebP。
+- 单张最大 25 MiB。
+- `mask` 必须是 PNG，且尺寸必须与第一张参考图一致。
+
+### 返回格式
+
+非流式响应：
+
+```json
+{
+  "created": 1780000000,
+  "background": "opaque",
+  "data": [
+    {
+      "b64_json": "...",
+      "revised_prompt": "..."
+    }
+  ],
+  "output_format": "png",
+  "quality": "high",
+  "size": "1024x1024",
+  "usage": {
+    "input_tokens": 12,
+    "input_tokens_details": {
+      "image_tokens": 0,
+      "text_tokens": 12
+    },
+    "output_tokens": 4096,
+    "total_tokens": 4108
+  }
+}
+```
+
+`response_format=url` 时，`b64_json` 替换为短期签名 `url`。
+
+### 临时 URL
+
+- 默认 10 分钟有效，可在管理端调整。
+- 使用 HMAC 签名，不需要 API Key 即可下载。
+- 文件放到 `data/temporary-images/`。
+- 过期后自动删除。
+- 不建立长期图片资产库。
+
+### 流式响应
+
+请求 `stream=true` 后使用 SSE：
+
+```text
+event: image_generation.completed
+data: {"type":"image_generation.completed",...}
+```
+
+`partial_images` 接受 0 到 3。ChatGPT 官网链路没有中间帧时，只返回最终完成事件，不伪造中间图片。
+
+### 错误
+
+```json
+{
+  "error": {
+    "message": "n must be between 1 and 4",
+    "type": "invalid_request_error",
+    "param": "n",
+    "code": "invalid_value"
+  }
+}
+```
+
+所有响应包含 `X-Request-ID`。
+
+## 账号池
+
+支持导入：
+
+- 每行一个 Access Token。
+- 原项目账号 JSON。
+
+兼容字段包括 `access_token`、`refresh_token`、`id_token`、`email`、`user_id`、`type`、`source_type`、`quota`、`restore_at` 和 `proxy`。
+
+账号状态：
+
+- `normal`：可调度。
+- `limited`：额度为 0 或上游限流。
+- `error`：刷新或凭据异常。
+- `disabled`：手动禁用，不会被定时刷新重新启用。
+
+Token 使用 AES-GCM 加密保存。配置中的 `signing-key` 丢失后，已有 Token 将无法解密，请把配置文件与 SQLite 数据一起备份。
+
+`image.auto-remove-invalid-accounts` 默认关闭。开启后，只有明确返回 401 或 Token 刷新失败的账号才会被自动删除。
+
+## 调度
+
+- 默认全局上游任务并发数为 3，可在管理端调整。
+- 默认单账号并发为 1。
+- 等待队列默认 100。
+- 请求超时默认 300 秒。
+- 账号按状态、剩余额度、在途数和最近使用时间选择。
+- `n > 1` 时拆分为多个上游任务。
+- 任意一张失败时整次 HTTP 请求失败，但日志保留已成功张数和额度消耗。
+
+## API Key
+
+- 支持多个客户端 Key。
+- 可创建、重命名、启用、禁用和删除。
+- 明文只在创建时出现一次。
+- 配额、租户和客户端管理由 New API 等上层系统负责。
+
+## 管理端
+
+```text
+/admin/
+```
+
+只保留：
+
+- 概览。
+- 账号池。
+- API Key。
+- 运行设置。
+- 请求日志。
+
+管理端不包含画图、图片历史、图片资产、文本对话、搜索或 PPT/PSD。
+
+## 健康检查与监控
+
+```text
+GET /healthz
+GET /readyz
+GET /metrics
+```
+
+`/readyz` 检查 SQLite、可用账号和 Solver 状态。
+
+## CLI
+
+```bash
+# 重新设置管理密钥
 ./bin/chatgpt2api -config config.yaml -set-management-key "new-strong-key"
-```
 
-从现有 Python 版本迁移账号和普通用户 Key：
-
-```bash
+# 导入旧 Python 项目的 accounts.json 和 auth_keys.json
 ./bin/chatgpt2api -config config.yaml -migrate-legacy
-```
 
-手动执行一次过期图片清理：
-
-```bash
+# 手动清理过期临时图片和日志
 ./bin/chatgpt2api -config config.yaml -cleanup-images
 ```
 
-## 运行前准备
+## 官网链路限制
 
-服务固定使用 ChatGPT Web 上游生成真实图片。首次运行后，在管理页“账号池”导入
-Access Token 或完整账号 JSON，再提交图片任务。
+以下字段会被正确接收、记录和返回，但最终视觉结果由 ChatGPT 官网决定：
 
-2026-10 起上游还要求 Turnstile token 由真实 chatgpt.com 页面计算。主服务现在直接内置
-Go 浏览器 Solver，不再需要外部 solver、Python、Playwright、Node 或 Docker：
+- 精确尺寸。
+- 精确质量等级。
+- 透明背景。
+- 中间帧数量。
+- 各模型名称对应的底层模型差异。
 
-```yaml
-sentinel:
-  browser-path: ""
-  timezone: "Asia/Shanghai"
-  headless: true
-  no-sandbox: true
-```
+## 后续 Banana 接入
 
-内置 Solver 仍使用系统 Chromium、Chrome 或 Edge，启动时会自动检测；也可以设置
-`sentinel.browser-path` 或环境变量 `SENTINEL_BROWSER_BIN`。`proxy-url` 会同时用于
-上游 HTTP 请求和 Solver 浏览器，并可在管理端“设置”页修改；修改后下一次请求会重建浏览器页面。
-
-实测内置 Solver 可以完成 `/chat-requirements/prepare`、真实页面 Turnstile 求解、
-`finalize` 和生图全链路。2026-10-22 使用 Edge 155 连续两次生图成功。Chromium 的驻留内存
-仍然无法消除，低配服务器建议给浏览器留 500-800 MB，1 GB 主机更稳妥。
-
-## 主要接口
-
-- `GET /healthz`
-- `GET /api/status`
-- `GET/POST/DELETE /api/accounts`
-- `POST /api/accounts/import-dir`
-- `POST /api/accounts/import-json`
-- `POST /api/accounts/export`
-- `POST /api/accounts/{id}/refresh`
-- `POST /api/accounts/refresh`
-- `GET/POST/PATCH/DELETE /api/access/keys`
-- `GET/PUT /api/access/settings`
-- `GET /api/models`
-- `POST /api/image-tasks/generations`
-- `GET /api/image-tasks`
-- `GET /api/images`
-- `POST /api/images/delete`
-- `GET /v1/models`
-- `POST /v1/images/generations`
-- `POST /v1/images/edits`
-- `GET /images/{signed-path}`
-
-生图页和模型接口只提供两个固定图片模型别名：
-
-```text
-gpt-image-2
-gpt-image-2.5
-```
-
-两个别名都不会作为上游对话模型直接发送，而是映射到 `default-upstream-model` 并使用
-`system_hints: ["picture_v2"]`。目前上游没有公开独立的 `gpt-image-2.5` 图片通道，因此
-`gpt-image-2.5` 暂时与 `gpt-image-2` 使用相同的 `picture_v2` 链路。其他对话模型会由
-provider 明确拒绝，不再出现在 `/api/models` 或 `/v1/models` 中。
-
-## 低配建议
-
-- 使用 systemd 直接运行二进制，不建议在低内存机器上额外常驻 Docker、Node 或 Redis。
-- 保持 `performance.image-workers: 1` 和 `parallel-generation: false`。
-- 默认返回图片 URL，不要默认使用 `b64_json`。
-- 不在应用内执行全量图片备份，使用外部 cron 和对象存储。
-- 图片 worker 的 timeout 和上游轮询参数都在 `config.yaml` 中。
-
-## 图片保留
-
-默认保留 7 天，进程内清理器每 6 小时检查一次。使用宝塔面板时，也可以把清理任务交给
-面板的计划任务执行，调用内置命令而不是直接删文件，这样 SQLite 记录会同步删除：
-
-```bash
-/www/wwwroot/chatgpt2api/chatgpt2api -config /www/wwwroot/chatgpt2api/config.yaml -cleanup-images
-```
-
-仓库附带的 [deploy/cleanup-images.sh](deploy/cleanup-images.sh) 可直接作为宝塔 shell 计划任务使用，
-建议每天执行一次：
-
-```bash
-APP_DIR=/www/wwwroot/chatgpt2api /bin/sh /www/wwwroot/chatgpt2api/deploy/cleanup-images.sh
-```
-
-## 当前限制
-
-- ChatGPT provider 依赖上游 Web 接口和 Sentinel/PoW，仍需要继续用真实账号验证和适配。
-- 内置 Solver 没有 `vm.js` 兼容回退；页面自带的 Turnstile 模块发现失败时会重建页面并重试。
-- `codex-gpt-image-2` 尚未接入轻量 provider。
-- PPT/PSD 可编辑文件生成暂未进入 MVP。
-- 账号密码登录恢复、批量导出和完整 CPA/Sub2API 导入尚未实现。
-- 账号 Token 使用 AES-GCM 加密后保存；丢失 `signing-key` 将无法解密已有账号，请把配置文件作为敏感备份保存。
+Provider 接口已与 HTTP 协议解耦。接入 Banana 时新增 Provider 和模型路由，不修改现有 OpenAI 路由和响应结构。

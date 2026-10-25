@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,11 +23,13 @@ import (
 )
 
 type Service struct {
-	store   *store.Store
-	config  *config.Store
-	mu      sync.Mutex
-	active  map[string]int
-	clients sync.Map
+	store        *store.Store
+	config       *config.Store
+	baseURL      string
+	mu           sync.Mutex
+	refreshDueMu sync.Mutex
+	active       map[string]int
+	clients      sync.Map
 }
 
 type ImportItem struct {
@@ -38,9 +41,11 @@ type ImportItem struct {
 	SourceType     string `json:"source_type,omitempty"`
 	ExportType     string `json:"export_type,omitempty"`
 	Email          string `json:"email,omitempty"`
+	UserID         string `json:"user_id,omitempty"`
 	Password       string `json:"password,omitempty"`
 	Proxy          string `json:"proxy,omitempty"`
 	Quota          int    `json:"quota,omitempty"`
+	RestoreAt      string `json:"restore_at,omitempty"`
 }
 
 type RefreshResult struct {
@@ -60,7 +65,11 @@ func (e *HTTPError) Error() string {
 }
 
 func NewService(s *store.Store, cfg *config.Store) *Service {
-	return &Service{store: s, config: cfg, active: make(map[string]int)}
+	baseURL := strings.TrimRight(strings.TrimSpace(cfg.Snapshot().ProviderBaseURL), "/")
+	if baseURL == "" {
+		baseURL = "https://chatgpt.com"
+	}
+	return &Service{store: s, config: cfg, baseURL: baseURL, active: make(map[string]int)}
 }
 
 func (s *Service) List(ctx context.Context) ([]store.Account, error) {
@@ -99,8 +108,10 @@ func (s *Service) Import(ctx context.Context, tokens []string, items []ImportIte
 			Type:         item.Type,
 			SourceType:   firstNonEmpty(item.SourceType, item.ExportType),
 			Email:        item.Email,
+			UserID:       item.UserID,
 			Proxy:        item.Proxy,
 			Quota:        item.Quota,
+			RestoreAt:    item.RestoreAt,
 			Status:       store.AccountNormal,
 		}
 		account = fillFromJWT(account)
@@ -108,6 +119,7 @@ func (s *Service) Import(ctx context.Context, tokens []string, items []ImportIte
 		if err != nil {
 			return nil, err
 		}
+		s.store.AddAccountEvent(ctx, saved.ID, "imported", "account imported")
 		addedIDs = append(addedIDs, saved.ID)
 		added++
 	}
@@ -134,6 +146,7 @@ func (s *Service) Import(ctx context.Context, tokens []string, items []ImportIte
 		if err != nil {
 			return nil, err
 		}
+		s.store.AddAccountEvent(ctx, saved.ID, "imported", "access token imported")
 		addedIDs = append(addedIDs, saved.ID)
 		added++
 	}
@@ -233,8 +246,10 @@ func collectImportItems(value any) []ImportItem {
 			Type:         firstNonEmpty(stringValue(v["type"]), stringValue(v["plan_type"])),
 			SourceType:   firstNonEmpty(stringValue(v["source_type"]), stringValue(v["export_type"])),
 			Email:        stringValue(v["email"]),
+			UserID:       firstNonEmpty(stringValue(v["user_id"]), stringValue(v["account_id"])),
 			Proxy:        stringValue(v["proxy"]),
 			Quota:        intValue(v["quota"]),
+			RestoreAt:    stringValue(v["restore_at"]),
 		}
 		if item.AccessToken == "" {
 			var out []ImportItem
@@ -323,8 +338,20 @@ func (s *Service) RefreshOne(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	wasDisabled := a.Status == store.AccountDisabled
 	a, err = s.EnsureFreshToken(ctx, a)
 	if err != nil {
+		if !wasDisabled && s.config.Snapshot().Image.AutoRemoveInvalidAccounts && isInvalidCredentialError(err) {
+			_ = s.store.DeleteAccount(ctx, a.ID)
+			s.store.AddAccountEvent(ctx, a.ID, "account_removed_invalid", err.Error())
+			return err
+		}
+		if !wasDisabled {
+			a.Status = store.AccountError
+		}
+		a.LastRefreshError = err.Error()
+		_ = s.store.UpdateAccount(ctx, a)
+		s.store.AddAccountEvent(ctx, a.ID, "token_refresh_failed", err.Error())
 		return err
 	}
 	info, err := s.fetchInfo(ctx, a)
@@ -335,7 +362,14 @@ func (s *Service) RefreshOne(ctx context.Context, id string) error {
 		}
 	}
 	if err != nil {
-		a.Status = store.AccountError
+		if !wasDisabled && s.config.Snapshot().Image.AutoRemoveInvalidAccounts && isInvalidCredentialError(err) {
+			_ = s.store.DeleteAccount(ctx, a.ID)
+			s.store.AddAccountEvent(ctx, a.ID, "account_removed_invalid", err.Error())
+			return err
+		}
+		if !wasDisabled {
+			a.Status = store.AccountError
+		}
 		a.LastRefreshError = err.Error()
 		_ = s.store.UpdateAccount(ctx, a)
 		s.store.AddAccountEvent(ctx, a.ID, "refresh_failed", err.Error())
@@ -347,9 +381,11 @@ func (s *Service) RefreshOne(ctx context.Context, id string) error {
 	a.Quota = info.Quota
 	a.RestoreAt = info.RestoreAt
 	a.LastRefreshError = ""
-	a.Status = store.AccountNormal
-	if info.Quota <= 0 {
-		a.Status = store.AccountLimited
+	if !wasDisabled {
+		a.Status = store.AccountNormal
+		if info.Quota <= 0 {
+			a.Status = store.AccountLimited
+		}
 	}
 	if err := s.store.UpdateAccount(ctx, a); err != nil {
 		return err
@@ -369,12 +405,25 @@ func (s *Service) ForceRefreshToken(ctx context.Context, a store.Account) (store
 	return s.refreshTokenGrant(ctx, a, true)
 }
 
-func (s *Service) refreshTokenGrant(ctx context.Context, a store.Account, force bool) (store.Account, error) {
+func (s *Service) refreshTokenGrant(ctx context.Context, a store.Account, force bool) (nextAccount store.Account, err error) {
 	if strings.TrimSpace(a.RefreshToken) == "" {
 		return a, nil
 	}
+	defer func() {
+		if err == nil {
+			return
+		}
+		updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		latest, getErr := s.store.GetAccount(updateCtx, a.ID)
+		if getErr != nil {
+			return
+		}
+		latest.LastRefreshError = "token refresh: " + truncate(err.Error(), 300)
+		_ = s.store.UpdateAccount(updateCtx, latest)
+	}()
 	if !force {
-		if seconds := jwtRemainingSeconds(a.AccessToken); seconds > 24*60*60 {
+		if seconds := jwtRemainingSeconds(a.AccessToken); seconds > 24*60*60 && !refreshTokenKeepaliveDue(a) {
 			return a, nil
 		}
 	}
@@ -415,6 +464,8 @@ func (s *Service) refreshTokenGrant(ctx context.Context, a store.Account, force 
 	if next.AccessToken == a.AccessToken {
 		return a, errors.New("oauth refresh returned no access token")
 	}
+	next.LastTokenRefreshAt = time.Now().UTC().Format(time.RFC3339)
+	next.LastRefreshError = ""
 	if err := s.store.UpdateAccount(ctx, next); err != nil {
 		return a, err
 	}
@@ -422,9 +473,45 @@ func (s *Service) refreshTokenGrant(ctx context.Context, a store.Account, force 
 	return next, nil
 }
 
+func refreshTokenKeepaliveDue(a store.Account) bool {
+	if strings.TrimSpace(a.RefreshToken) == "" {
+		return false
+	}
+	last := strings.TrimSpace(a.LastTokenRefreshAt)
+	if last == "" {
+		if payload := decodeJWTPayload(a.AccessToken); payload != nil {
+			switch value := payload["iat"].(type) {
+			case float64:
+				return time.Since(time.Unix(int64(value), 0)) >= 7*24*time.Hour
+			case json.Number:
+				if issued, parseErr := value.Int64(); parseErr == nil {
+					return time.Since(time.Unix(issued, 0)) >= 7*24*time.Hour
+				}
+			}
+		}
+		last = a.CreatedAt
+	}
+	parsed, parseErr := time.Parse(time.RFC3339, last)
+	if parseErr != nil {
+		return false
+	}
+	return time.Since(parsed) >= 7*24*time.Hour
+}
+
 func isHTTPStatus(err error, status int) bool {
 	var httpErr *HTTPError
 	return errors.As(err, &httpErr) && httpErr.Status == status
+}
+
+func isInvalidCredentialError(err error) bool {
+	if isHTTPStatus(err, http.StatusUnauthorized) {
+		return true
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "token_invalidated") ||
+		strings.Contains(text, "token revoked") ||
+		strings.Contains(text, "invalidated oauth token") ||
+		strings.Contains(text, "unauthorized")
 }
 
 func (s *Service) RefreshMany(ctx context.Context, ids []string) RefreshResult {
@@ -432,6 +519,9 @@ func (s *Service) RefreshMany(ctx context.Context, ids []string) RefreshResult {
 	if len(ids) == 0 {
 		accounts, _ := s.store.ListAccounts(ctx)
 		for _, a := range accounts {
+			if a.Status == store.AccountDisabled {
+				continue
+			}
 			ids = append(ids, a.ID)
 		}
 	}
@@ -469,12 +559,22 @@ func (s *Service) RefreshMany(ctx context.Context, ids []string) RefreshResult {
 }
 
 func (s *Service) Acquire(ctx context.Context) (store.Account, func(), error) {
-	cfg := s.config.Snapshot()
 	deadline := time.Now().Add(5 * time.Second)
+	restoreChecked := false
 	for {
+		cfg := s.config.Snapshot()
 		accounts, err := s.store.ListAccounts(ctx)
 		if err != nil {
 			return store.Account{}, nil, err
+		}
+		if !restoreChecked {
+			restoreChecked = true
+			if s.refreshDueLimited(ctx, accounts) > 0 {
+				accounts, err = s.store.ListAccounts(ctx)
+				if err != nil {
+					return store.Account{}, nil, err
+				}
+			}
 		}
 		s.mu.Lock()
 		var candidate *store.Account
@@ -486,7 +586,10 @@ func (s *Service) Acquire(ctx context.Context) (store.Account, func(), error) {
 			if s.active[a.ID] >= cfg.Image.AccountConcurrency {
 				continue
 			}
-			if candidate == nil || a.LastUsedAt < candidate.LastUsedAt {
+			if candidate == nil ||
+				a.LastUsedAt < candidate.LastUsedAt ||
+				(a.LastUsedAt == candidate.LastUsedAt && a.Quota > candidate.Quota) ||
+				(a.LastUsedAt == candidate.LastUsedAt && a.Quota == candidate.Quota && a.ID < candidate.ID) {
 				candidate = a
 			}
 		}
@@ -517,6 +620,45 @@ func (s *Service) Acquire(ctx context.Context) (store.Account, func(), error) {
 	}
 }
 
+func (s *Service) refreshDueLimited(ctx context.Context, accounts []store.Account) int {
+	s.refreshDueMu.Lock()
+	defer s.refreshDueMu.Unlock()
+	nowValue := time.Now().UTC()
+	refreshed := 0
+	for _, item := range accounts {
+		if item.Status != store.AccountLimited || !restoreTimeReached(item.RestoreAt, nowValue) {
+			continue
+		}
+		if err := s.RefreshOne(ctx, item.ID); err != nil {
+			continue
+		}
+		refreshed++
+		if refreshed >= 5 {
+			break
+		}
+	}
+	return refreshed
+}
+
+func restoreTimeReached(value string, nowValue time.Time) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05", "2006/01/02 15:04:05"} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return !parsed.After(nowValue)
+		}
+	}
+	if unixValue, err := strconv.ParseInt(value, 10, 64); err == nil {
+		if unixValue > 1_000_000_000_000 {
+			unixValue /= 1000
+		}
+		return !time.Unix(unixValue, 0).After(nowValue)
+	}
+	return false
+}
+
 func (s *Service) MarkResult(ctx context.Context, accountID string, success bool) {
 	a, err := s.store.GetAccount(ctx, accountID)
 	if err != nil {
@@ -527,7 +669,7 @@ func (s *Service) MarkResult(ctx context.Context, accountID string, success bool
 		if a.Quota > 0 {
 			a.Quota--
 		}
-		if a.Quota == 0 {
+		if a.Quota == 0 && a.Status == store.AccountNormal {
 			a.Status = store.AccountLimited
 		}
 	} else {
@@ -535,6 +677,37 @@ func (s *Service) MarkResult(ctx context.Context, accountID string, success bool
 	}
 	a.LastUsedAt = time.Now().UTC().Format(time.RFC3339)
 	_ = s.store.UpdateAccount(ctx, a)
+}
+
+func (s *Service) MarkLimited(ctx context.Context, accountID, reason string) {
+	a, err := s.store.GetAccount(ctx, accountID)
+	if err != nil {
+		return
+	}
+	if a.Status == store.AccountDisabled {
+		return
+	}
+	a.Status = store.AccountLimited
+	a.LastRefreshError = truncate(reason, 300)
+	a.LastUsedAt = time.Now().UTC().Format(time.RFC3339)
+	_ = s.store.UpdateAccount(ctx, a)
+	s.store.AddAccountEvent(ctx, a.ID, "rate_limited", reason)
+}
+
+func (s *Service) MarkCredentialError(ctx context.Context, accountID, reason string) {
+	a, err := s.store.GetAccount(ctx, accountID)
+	if err != nil || a.Status == store.AccountDisabled {
+		return
+	}
+	if s.config.Snapshot().Image.AutoRemoveInvalidAccounts {
+		_ = s.store.DeleteAccount(ctx, a.ID)
+		s.store.AddAccountEvent(ctx, a.ID, "account_removed_invalid", reason)
+		return
+	}
+	a.Status = store.AccountError
+	a.LastRefreshError = truncate(reason, 300)
+	_ = s.store.UpdateAccount(ctx, a)
+	s.store.AddAccountEvent(ctx, a.ID, "credential_error", reason)
 }
 
 type remoteInfo struct {
@@ -590,7 +763,7 @@ func (s *Service) getJSON(ctx context.Context, client *http.Client, a store.Acco
 		}
 		reader = bytes.NewReader(data)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, "https://chatgpt.com"+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, s.baseURL+path, reader)
 	if err != nil {
 		return err
 	}
