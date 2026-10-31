@@ -2,6 +2,11 @@
 import { ArrowUp, ChevronDown, ImagePlus, Info, LoaderCircle, RectangleHorizontal, RectangleVertical, Square, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type RefObject } from "react";
 
+import {
+  findImageSizePreset,
+  IMAGE_SIZE_PRESETS,
+  type ImageSizePreset,
+} from "@/app/image/image-size-presets";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,22 +68,24 @@ const qualityOptions = [
   { value: "medium", label: "中" },
   { value: "high", label: "高" },
 ];
-const aspectOptions = [
-  { ratio: "1:1", tier: "1k", width: "1024", height: "1024", label: "1:1", icon: Square },
-  { ratio: "2:3", tier: "1k", width: "1024", height: "1536", label: "2:3", icon: RectangleVertical },
-  { ratio: "3:2", tier: "1k", width: "1536", height: "1024", label: "3:2", icon: RectangleHorizontal },
-  { ratio: "3:4", tier: "1k", width: "1024", height: "1365", label: "3:4", icon: RectangleVertical },
-  { ratio: "4:3", tier: "1k", width: "1365", height: "1024", label: "4:3", icon: RectangleHorizontal },
-  { ratio: "9:16", tier: "1k", width: "1088", height: "1920", label: "9:16", icon: RectangleVertical },
-  { ratio: "16:9", tier: "1k", width: "1920", height: "1088", label: "16:9", icon: RectangleHorizontal },
-  { ratio: "1:1", tier: "2k", width: "2048", height: "2048", label: "1:1(2k)", icon: Square },
-  { ratio: "16:9", tier: "2k", width: "2560", height: "1440", label: "16:9(2k)", icon: RectangleHorizontal },
-  { ratio: "9:16", tier: "2k", width: "1440", height: "2560", label: "9:16(2k)", icon: RectangleVertical },
-  { ratio: "16:9", tier: "4k", width: "3840", height: "2160", label: "16:9(4k)", icon: RectangleHorizontal },
-  { ratio: "9:16", tier: "4k", width: "2160", height: "3840", label: "9:16(4k)", icon: RectangleVertical },
-  { ratio: "auto", tier: "auto", width: "1024", height: "1024", label: "auto", icon: null },
+const tierOptions = [
+  { value: "1k", label: "1K" },
+  { value: "2k", label: "2K" },
+  { value: "4k", label: "4K" },
 ];
 const countOptions = Array.from({ length: 10 }, (_, index) => String(index + 1));
+
+function iconForPreset(option: ImageSizePreset) {
+  if (option.tier === "auto") {
+    return null;
+  }
+  const width = Number(option.width);
+  const height = Number(option.height);
+  if (width === height) {
+    return Square;
+  }
+  return width > height ? RectangleHorizontal : RectangleVertical;
+}
 
 export function ImageComposer({
   prompt,
@@ -113,6 +120,7 @@ export function ImageComposer({
   const [isSizeMenuOpen, setIsSizeMenuOpen] = useState(false);
   const [isDraggingImage, setIsDraggingImage] = useState(false);
   const [sizeMenuPos, setSizeMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [sizeMenuDirection, setSizeMenuDirection] = useState<"up" | "down">("up");
   const sizeMenuRef = useRef<HTMLDivElement>(null);
   const sizeMenuBtnRef = useRef<HTMLButtonElement>(null);
   const lightboxImages = useMemo(
@@ -123,11 +131,15 @@ export function ImageComposer({
     () => imageModels.map((model) => ({ value: model, label: model })),
     [imageModels],
   );
+  const tierAspectOptions = useMemo(
+    () => IMAGE_SIZE_PRESETS.filter((option) => option.tier === imageTier && option.ratio !== "auto"),
+    [imageTier],
+  );
+  const autoPreset = IMAGE_SIZE_PRESETS.find((option) => option.tier === "auto") ?? IMAGE_SIZE_PRESETS[0];
   const qualityLabel = qualityOptions.find((option) => option.value === imageQuality)?.label || "自动";
   const ratioLabel = imageRatio === "auto" ? "auto" : `${imageRatio}(${imageTier})`;
   const imageSizeLabel = `${qualityLabel} · ${ratioLabel} · ${imageCount || 1} 张`;
   const selectedModelLabel = modelOptions.find((option) => option.value === imageModel)?.label || imageModel;
-  const isCodexModel = imageModel.toLowerCase().includes("codex");
 
   useEffect(() => {
     if (!isSizeMenuOpen) {
@@ -145,9 +157,14 @@ export function ImageComposer({
         setIsSizeMenuOpen(false);
       }
     };
+    const handleResize = () => {
+      setIsSizeMenuOpen(false);
+    };
     window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("resize", handleResize);
     return () => {
       window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("resize", handleResize);
     };
   }, [isSizeMenuOpen]);
 
@@ -335,7 +352,12 @@ export function ImageComposer({
                         if (!isSizeMenuOpen && sizeMenuBtnRef.current) {
                           const rect = sizeMenuBtnRef.current.getBoundingClientRect();
                           const menuWidth = Math.min(460, window.innerWidth - 32);
-                          setSizeMenuPos({ top: rect.top - 8, left: Math.max(16, Math.min(rect.left, window.innerWidth - menuWidth - 16)) });
+                          const opensUp = rect.top > window.innerHeight * 0.55;
+                          setSizeMenuDirection(opensUp ? "up" : "down");
+                          setSizeMenuPos({
+                            top: opensUp ? rect.top - 8 : rect.bottom + 8,
+                            left: Math.max(16, Math.min(rect.left, window.innerWidth - menuWidth - 16)),
+                          });
                         }
                         setIsSizeMenuOpen((open) => !open);
                       }}
@@ -346,11 +368,11 @@ export function ImageComposer({
                     {isSizeMenuOpen ? (
                       <div
                         ref={sizeMenuRef}
-                        className="fixed z-[80] max-h-[62dvh] overflow-y-auto rounded-[24px] border border-stone-200/70 bg-white p-4 shadow-[0_30px_90px_-34px_rgba(15,23,42,0.42)] sm:max-h-none sm:overflow-visible"
+                        className="fixed z-[80] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[24px] border border-stone-200/70 bg-white p-4 shadow-[0_30px_90px_-34px_rgba(15,23,42,0.42)]"
                         style={{
                           top: sizeMenuPos.top,
                           left: sizeMenuPos.left,
-                          transform: "translateY(-100%)",
+                          transform: sizeMenuDirection === "up" ? "translateY(-100%)" : undefined,
                           width: "min(460px, calc(100vw - 2rem))",
                         }}
                       >
@@ -415,6 +437,47 @@ export function ImageComposer({
                           </div>
                         </div>
                         <div className="mb-3">
+                          <div className="mb-2 text-sm font-medium text-stone-900">分辨率</div>
+                          <div className="grid grid-cols-3 gap-2">
+                            {tierOptions.map((option) => {
+                              const active = imageTier === option.value && imageRatio !== "auto";
+                              return (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  aria-pressed={active}
+                                  className={cn(
+                                    "h-9 cursor-pointer rounded-full border border-stone-200 bg-white text-sm text-stone-800 transition hover:border-stone-300 hover:bg-stone-50",
+                                    active && "border-stone-950 bg-white font-medium text-stone-950",
+                                  )}
+                                  onClick={() => {
+                                    onImageTierChange(option.value);
+                                    if (imageRatio === "auto") {
+                                      const firstPreset = IMAGE_SIZE_PRESETS.find((item) => item.tier === option.value);
+                                      if (firstPreset) {
+                                        onImageRatioChange(firstPreset.ratio);
+                                        onImageWidthChange(firstPreset.width);
+                                        onImageHeightChange(firstPreset.height);
+                                      }
+                                      return;
+                                    }
+                                    const nextPreset =
+                                      findImageSizePreset(imageRatio, option.value) ??
+                                      IMAGE_SIZE_PRESETS.find((item) => item.tier === option.value);
+                                    if (nextPreset) {
+                                      onImageRatioChange(nextPreset.ratio);
+                                      onImageWidthChange(nextPreset.width);
+                                      onImageHeightChange(nextPreset.height);
+                                    }
+                                  }}
+                                >
+                                  {option.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div className="mb-3">
                           <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-stone-900">
                             尺寸 <Info className="size-3.5 text-stone-400" />
                           </div>
@@ -449,24 +512,19 @@ export function ImageComposer({
                             宽高比 <Info className="size-3.5 text-stone-400" />
                           </div>
                           <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
-                            {aspectOptions.map((option) => {
+                            {tierAspectOptions.map((option) => {
                               const active = option.ratio === imageRatio && option.tier === imageTier && option.width === imageWidth && option.height === imageHeight;
-                              const Icon = option.icon;
-                              const disabled = !isCodexModel && (option.tier === "2k" || option.tier === "4k");
+                              const Icon = iconForPreset(option);
                               return (
                                 <button
                                   key={`${option.ratio}-${option.tier}-${option.label}`}
                                   type="button"
-                                  disabled={disabled}
+                                  aria-pressed={active}
                                   className={cn(
                                     "flex h-[64px] cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-stone-200 bg-white text-sm text-stone-800 transition hover:border-stone-300 hover:bg-stone-50",
                                     active && "border-stone-950",
-                                    disabled && "cursor-not-allowed border-stone-100 bg-stone-50 text-stone-300 hover:border-stone-100 hover:bg-stone-50",
                                   )}
                                   onClick={() => {
-                                    if (disabled) {
-                                      return;
-                                    }
                                     onImageRatioChange(option.ratio);
                                     onImageTierChange(option.tier);
                                     onImageWidthChange(option.width);
@@ -476,14 +534,30 @@ export function ImageComposer({
                                   {Icon ? (
                                     <>
                                       <Icon className="size-3.5 stroke-[1.8]" />
-                                      <span>{option.label}</span>
+                                      <span>{option.ratio}</span>
                                     </>
                                   ) : (
-                                    <span>{option.label}</span>
+                                    <span className="text-xs font-medium">{option.ratio}</span>
                                   )}
                                 </button>
                               );
                             })}
+                            <button
+                              type="button"
+                              aria-pressed={imageRatio === "auto"}
+                              className={cn(
+                                "col-span-2 flex h-[64px] cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-stone-200 bg-white px-2 text-xs font-medium text-stone-800 transition hover:border-stone-300 hover:bg-stone-50 sm:col-span-1",
+                                imageRatio === "auto" && "border-stone-950",
+                              )}
+                              onClick={() => {
+                                onImageRatioChange(autoPreset.ratio);
+                                onImageTierChange(autoPreset.tier);
+                                onImageWidthChange(autoPreset.width);
+                                onImageHeightChange(autoPreset.height);
+                              }}
+                            >
+                              随原图
+                            </button>
                           </div>
                         </div>
                         <div className="border-t border-stone-100 pt-3">

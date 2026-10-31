@@ -296,7 +296,50 @@ func TestAPIKeyDisabledAndCORS(t *testing.T) {
 func TestAccessSettingsUpdate(t *testing.T) {
 	ts := newTestServer(t)
 	req, _ := http.NewRequest(http.MethodPut, ts.httpServer.URL+"/api/access/settings",
-		strings.NewReader(`{"global_concurrency":5,"account_concurrency":2,"request_timeout_seconds":240,"temporary_url_ttl_seconds":900,"log_retention_days":14,"proxy_url":"http://127.0.0.1:10808"}`))
+		strings.NewReader(`{
+			"host":"0.0.0.0",
+			"port":18081,
+			"debug":true,
+			"usage_statistics_enabled":false,
+			"logging_to_file":true,
+			"proxy_url":"http://127.0.0.1:10808",
+			"provider_base_url":"https://chatgpt.com",
+			"global_concurrency":5,
+			"account_concurrency":2,
+			"request_timeout_seconds":240,
+			"temporary_url_ttl_seconds":900,
+			"image_poll_timeout_seconds":180,
+			"image_poll_interval_seconds":4,
+			"image_queue_size":25,
+			"log_retention_days":14,
+			"max_upload_bytes":31457280,
+			"max_image_bytes":24117248,
+			"max_image_pixels":10485760,
+			"max_dimension":4096,
+			"parallel_generation":true,
+			"account_refresh_workers":3,
+			"text_cache_entries":64,
+			"metrics_mode":"full",
+			"quota_switch_account":false,
+			"quota_switch_model":true,
+			"sentinel_browser_path":"/usr/bin/chromium",
+			"sentinel_timezone":"UTC",
+			"sentinel_headless":false,
+			"sentinel_no_sandbox":false,
+			"sentinel_refresh_minutes":15,
+			"sentinel_navigate_timeout_seconds":45,
+			"sentinel_solve_timeout_seconds":90,
+			"public_base_url":"https://api.example.com",
+			"image_generation_model":"gpt-image-2.5",
+			"default_upstream_model":"gpt-5-5",
+			"default_thinking_effort":"high",
+			"refresh_interval_minutes":20,
+			"auto_remove_invalid_accounts":false,
+			"sensitive_words":["foo"," bar ","foo"],
+			"cors_allowed_origins":["https://example.com","https://*.example.com"],
+			"max_request_body_bytes":52428800,
+			"openai_compatibility":[{"name":"test"}]
+		}`))
 	req.Header.Set("X-Management-Key", ts.management)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -313,6 +356,61 @@ func TestAccessSettingsUpdate(t *testing.T) {
 		cfg.Image.RequestTimeoutSeconds != 240 || cfg.Image.TemporaryURLTTLSeconds != 900 ||
 		cfg.Image.LogRetentionDays != 14 {
 		t.Fatalf("settings not saved: %#v", cfg)
+	}
+	if cfg.Host != "0.0.0.0" || cfg.Port != 18081 || !cfg.Debug || cfg.UsageStatistics ||
+		!cfg.LoggingToFile || cfg.ProviderBaseURL != "https://chatgpt.com" {
+		t.Fatalf("server/provider settings not saved: %#v", cfg)
+	}
+	if cfg.Image.PollTimeoutSeconds != 180 || cfg.Image.PollIntervalSeconds != 4 ||
+		cfg.Image.QueueSize != 25 || cfg.Image.MaxUploadBytes != 31457280 ||
+		cfg.Image.MaxImageBytes != 24117248 || cfg.Image.MaxImagePixels != 10485760 ||
+		cfg.Image.MaxDimension != 4096 {
+		t.Fatalf("image limits not saved: %#v", cfg.Image)
+	}
+	if !cfg.Performance.ParallelGeneration || cfg.Performance.AccountRefreshWorkers != 3 ||
+		cfg.Performance.TextCacheEntries != 64 || cfg.Performance.MetricsMode != "full" {
+		t.Fatalf("performance settings not saved: %#v", cfg.Performance)
+	}
+	if cfg.QuotaExceeded.SwitchAccount || !cfg.QuotaExceeded.SwitchModel {
+		t.Fatalf("quota settings not saved: %#v", cfg.QuotaExceeded)
+	}
+	if cfg.Sentinel.Headless || cfg.Sentinel.NoSandbox || cfg.Sentinel.RefreshMinutes != 15 ||
+		cfg.Sentinel.NavigateTimeoutSecs != 45 || cfg.Sentinel.SolveTimeoutSeconds != 90 {
+		t.Fatalf("sentinel settings not saved: %#v", cfg.Sentinel)
+	}
+	if cfg.ImageGenerationModel != "gpt-image-2.5" || cfg.DefaultThinkingEffort != "high" {
+		t.Fatalf("model settings not saved: %#v", cfg)
+	}
+	if cfg.MaxRequestBodyBytes != 52428800 || len(cfg.OpenAICompatibility) != 1 ||
+		len(cfg.CORS.AllowedOrigins) != 2 || len(cfg.SensitiveWords) != 2 {
+		t.Fatalf("advanced settings not saved: %#v", cfg)
+	}
+
+	response, err := http.NewRequest(http.MethodGet, ts.httpServer.URL+"/api/access/settings", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Header.Set("X-Management-Key", ts.management)
+	settingsResponse, err := http.DefaultClient.Do(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer settingsResponse.Body.Close()
+	if settingsResponse.StatusCode != http.StatusOK {
+		t.Fatalf("settings get status = %d", settingsResponse.StatusCode)
+	}
+	var settings map[string]any
+	if err := json.NewDecoder(settingsResponse.Body).Decode(&settings); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{
+		"debug", "image_poll_timeout_seconds", "max_image_pixels", "parallel_generation",
+		"quota_switch_model", "provider_base_url", "sentinel_headless",
+		"cors_allowed_origins", "openai_compatibility",
+	} {
+		if _, ok := settings[key]; !ok {
+			t.Fatalf("settings response missing %s: %#v", key, settings)
+		}
 	}
 }
 

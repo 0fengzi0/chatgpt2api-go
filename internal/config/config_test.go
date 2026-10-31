@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -177,6 +178,58 @@ func TestImageGatewayDefaults(t *testing.T) {
 	if cfg.Image.LogRetentionDays != 30 || cfg.Image.MaxImagePixels != 16*1024*1024 {
 		t.Fatalf("unexpected retention or pixel default: retention=%d pixels=%d",
 			cfg.Image.LogRetentionDays, cfg.Image.MaxImagePixels)
+	}
+}
+
+func TestLoadUpgradesUnsupportedImagePixelLimit(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	raw := "image:\n  max-image-pixels: 4194304\n  max-dimension: 4096\n"
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Image.MaxImagePixels != 16*1024*1024 {
+		t.Fatalf("image pixel limit was not upgraded: %d", cfg.Image.MaxImagePixels)
+	}
+	if cfg.Image.MaxDimension != 4096 {
+		t.Fatalf("supported image dimension limit changed: %d", cfg.Image.MaxDimension)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "max-image-pixels: 16777216") {
+		t.Fatalf("upgraded image limit was not persisted: %s", data)
+	}
+}
+
+func TestNormalizeUpgradesUnsupportedImageDimension(t *testing.T) {
+	cfg := Default()
+	cfg.Image.MaxImagePixels = MinimumSupportedImagePixels
+	cfg.Image.MaxDimension = 2048
+	cfg.Normalize()
+	if cfg.Image.MaxImagePixels != MinimumSupportedImagePixels {
+		t.Fatalf("supported image pixel limit changed: %d", cfg.Image.MaxImagePixels)
+	}
+	if cfg.Image.MaxDimension != 4096 {
+		t.Fatalf("image dimension limit was not upgraded: %d", cfg.Image.MaxDimension)
+	}
+}
+
+func TestNormalizeKeepsSupportedImageLimits(t *testing.T) {
+	cfg := Default()
+	cfg.Image.MaxImagePixels = MinimumSupportedImagePixels
+	cfg.Image.MaxDimension = MinimumSupportedImageDimension
+	cfg.Normalize()
+	if cfg.Image.MaxImagePixels != MinimumSupportedImagePixels {
+		t.Fatalf("supported image pixel limit changed: %d", cfg.Image.MaxImagePixels)
+	}
+	if cfg.Image.MaxDimension != MinimumSupportedImageDimension {
+		t.Fatalf("supported image dimension limit changed: %d", cfg.Image.MaxDimension)
 	}
 }
 

@@ -68,6 +68,15 @@
     .empty{padding:38px 18px;text-align:center;color:var(--muted)}
     .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
     .form-grid .wide{grid-column:1/-1}
+    .form-section{grid-column:1/-1;margin:6px 0 -2px;padding:13px 0 5px;border-top:1px solid #eaecf0}
+    .form-section:first-child{margin-top:0;padding-top:0;border-top:0}
+    .form-section strong{display:block;font-size:14px;color:#17202a}
+    .form-section span{display:block;margin-top:2px;color:var(--muted);font-size:12px}
+    .field-hint{color:var(--muted);font-size:12px;font-weight:400}
+    .check-field{display:flex;align-items:flex-start;gap:9px;min-height:44px;padding:8px 0}
+    .check-field input{width:auto;margin:3px 0 0}
+    .check-field span{display:grid;gap:2px}
+    .code-area{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px}
     .form-actions{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
     .filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px;margin-bottom:12px}
     dialog{width:min(620px,calc(100vw - 30px));border:1px solid var(--line);border-radius:8px;padding:0;box-shadow:0 24px 70px rgba(16,24,40,.22)}
@@ -386,17 +395,59 @@ async function keyAction(action,name,enabled){
 async function loadSettings(){
   try{
     const config=await api("/api/access/settings");
-    $("#view-settings").innerHTML=`<div class="page-head"><div><h1>运行设置</h1><p class="muted">配置保存到当前配置文件</p></div></div><section class="panel"><div class="panel-body">
+    const compatibility=JSON.stringify(config.openai_compatibility||[],null,2);
+    const metricsOptions=["light","full","off"];
+    const effortOptions=["auto","minimal","low","medium","high","standard","extended","max"];
+    $("#view-settings").innerHTML=`<div class="page-head"><div><h1>运行设置</h1><p class="muted">配置保存到当前配置文件；监听地址、端口和 Solver 浏览器参数在重启后生效</p></div></div><section class="panel"><div class="panel-body">
       <div class="form-grid">
-        ${field("监听地址","settingsHost",config.host,true)}${field("端口","settingsPort",config.port,false,"number")}
+        ${sectionHeading("服务与存储","影响进程监听、运行目录和基础日志行为")}
+        ${field("监听地址","settingsHost",config.host)}${field("端口","settingsPort",config.port,false,"number")}
+        ${field("运行数据目录","settingsDataDir",config.data_dir,true)}${field("认证目录","settingsAuthDir",config.auth_dir,true)}
+        ${field("签名密钥","settingsSigningKey",config.signing_key_configured?"已配置，不在页面显示":"未配置",true)}
+        ${field("刷新间隔（分钟）","settingsRefreshInterval",config.refresh_interval_minutes,false,"number")}
+        ${toggleField("调试日志","settingsDebug",config.debug,"输出更详细的运行日志")}
+        ${toggleField("使用统计","settingsUsageStatistics",config.usage_statistics_enabled,"记录调用统计")}
+        ${toggleField("写入日志文件","settingsLoggingToFile",config.logging_to_file,"将运行日志写入文件")}
+
+        ${sectionHeading("图片队列与处理限制","尺寸上限必须至少支持官方 2K 预设")}
         ${field("全局并发","settingsGlobalConcurrency",config.global_concurrency,false,"number")}${field("单账号并发","settingsAccountConcurrency",config.account_concurrency,false,"number")}
         ${field("请求超时（秒）","settingsRequestTimeout",config.request_timeout_seconds,false,"number")}${field("临时 URL（秒）","settingsTempTTL",config.temporary_url_ttl_seconds,false,"number")}
-        ${field("日志保留（天）","settingsLogRetention",config.log_retention_days,false,"number")}${field("刷新间隔（分钟）","settingsRefreshInterval",config.refresh_interval_minutes,false,"number")}
-        ${field("公共基础 URL","settingsPublicBaseURL",config.public_base_url||"")}${field("默认上游模型","settingsUpstreamModel",config.default_upstream_model)}
-        ${field("全局代理","settingsProxyURL",config.proxy_url||"")}${field("Solver 浏览器","settingsBrowserPath",config.sentinel_browser_path||"")}
+        ${field("轮询超时（秒）","settingsPollTimeout",config.image_poll_timeout_seconds,false,"number")}${field("轮询间隔（秒）","settingsPollInterval",config.image_poll_interval_seconds,false,"number")}
+        ${field("队列长度","settingsQueueSize",config.image_queue_size,false,"number")}${field("日志保留（天）","settingsLogRetention",config.log_retention_days,false,"number")}
+        ${field("上传上限（字节）","settingsMaxUploadBytes",config.max_upload_bytes,false,"number")}${field("结果图片上限（字节）","settingsMaxImageBytes",config.max_image_bytes,false,"number")}
+        ${field("最大总像素","settingsMaxImagePixels",config.max_image_pixels,false,"number","最低 "+config.minimum_image_pixels)}${field("最大单边像素","settingsMaxDimension",config.max_dimension,false,"number","最低 "+config.minimum_image_dimension)}
+        ${toggleField("自动移除无效账号","settingsAutoRemoveInvalid",config.auto_remove_invalid_accounts,"Token 明确失效且无法刷新时删除账号")}
+
+        ${sectionHeading("性能与失败切换","并发、刷新和指标模式")}
+        ${toggleField("并行生成","settingsParallelGeneration",config.parallel_generation,"多张图片同时执行")}
+        ${field("账号刷新并发","settingsAccountRefreshWorkers",config.account_refresh_workers,false,"number")}
+        ${field("文本缓存条数","settingsTextCacheEntries",config.text_cache_entries,false,"number")}
+        ${selectField("指标模式","settingsMetricsMode",config.metrics_mode,metricsOptions)}
+        ${toggleField("额度失败切换账号","settingsQuotaSwitchAccount",config.quota_switch_account,"当前账号额度不足时切换账号")}
+        ${toggleField("额度失败切换模型","settingsQuotaSwitchModel",config.quota_switch_model,"当前模型额度不足时尝试切换模型")}
+
+        ${sectionHeading("Provider 与模型","网关访问的上游地址和默认模型")}
+        ${field("Provider Base URL","settingsProviderBaseURL",config.provider_base_url||"")}
+        ${field("生图模型","settingsImageGenerationModel",config.image_generation_model||"")}
+        ${field("默认上游模型","settingsUpstreamModel",config.default_upstream_model)}
+        ${selectField("默认思考强度","settingsThinkingEffort",config.default_thinking_effort,effortOptions)}
+
+        ${sectionHeading("Turnstile Solver","浏览器参数变更通常需要重启服务")}
+        ${field("Solver 浏览器","settingsBrowserPath",config.sentinel_browser_path||"")}
         ${field("Solver 时区","settingsTimezone",config.sentinel_timezone||"")}
-        <label class="wide">自动移除无效账号<span><input id="settingsAutoRemoveInvalid" type="checkbox" style="width:auto;margin-right:7px" ${config.auto_remove_invalid_accounts?"checked":""}>Token 明确失效且无法刷新时删除账号</span></label>
-        <label class="wide">敏感词（每行一个）<textarea id="settingsSensitiveWords">${esc((config.sensitive_words||[]).join("\n"))}</textarea></label>
+        ${field("刷新间隔（分钟）","settingsSentinelRefresh",config.sentinel_refresh_minutes,false,"number")}
+        ${field("导航超时（秒）","settingsSentinelNavigate",config.sentinel_navigate_timeout_seconds,false,"number")}
+        ${field("求解超时（秒）","settingsSentinelSolve",config.sentinel_solve_timeout_seconds,false,"number")}
+        ${toggleField("无头浏览器","settingsSentinelHeadless",config.sentinel_headless,"后台运行 Chromium")}
+        ${toggleField("关闭浏览器沙箱","settingsSentinelNoSandbox",config.sentinel_no_sandbox,"无沙箱环境运行时使用")}
+
+        ${sectionHeading("网络、安全与高级配置","CORS、请求体、敏感词和兼容路由")}
+        ${field("公共基础 URL","settingsPublicBaseURL",config.public_base_url||"")}
+        ${field("全局代理","settingsProxyURL",config.proxy_url||"")}
+        ${field("最大请求体（字节）","settingsMaxRequestBody",config.max_request_body_bytes,false,"number")}
+        ${textareaField("CORS 允许来源（每行一个）","settingsCORSOrigins",(config.cors_allowed_origins||[]).join("\n"),"支持 https://*.example.com")}
+        ${textareaField("敏感词（每行一个）","settingsSensitiveWords",(config.sensitive_words||[]).join("\n"),"")}
+        ${textareaField("OpenAI Compatibility JSON","settingsOpenAICompatibility",compatibility,"必须是 JSON 数组",true)}
         <label class="wide">轮换管理密钥<input id="settingsManagementKey" type="password" placeholder="留空不修改"></label>
       </div><div class="form-actions"><button class="primary" id="saveSettings">保存设置</button></div>
     </div></section>`;
@@ -404,20 +455,58 @@ async function loadSettings(){
   }catch(error){toast(error.message)}
 }
 
-function field(label,id,value,readonly=false,type="text"){
-  return `<label>${esc(label)}<input id="${id}" type="${type}" value="${esc(value??"")}" ${readonly?"readonly":""}></label>`;
+function field(label,id,value,readonly=false,type="text",hint=""){
+  return `<label>${esc(label)}${hint?`<span class="field-hint">${esc(hint)}</span>`:""}<input id="${id}" type="${type}" value="${esc(value??"")}" ${readonly?"readonly":""}></label>`;
+}
+
+function selectField(label,id,value,options){
+  return `<label>${esc(label)}<select id="${id}">${options.map((option)=>`<option value="${esc(option)}" ${String(value)===String(option)?"selected":""}>${esc(option)}</option>`).join("")}</select></label>`;
+}
+
+function textareaField(label,id,value,hint="",code=false){
+  return `<label class="wide">${esc(label)}${hint?`<span class="field-hint">${esc(hint)}</span>`:""}<textarea id="${id}" class="${code?"code-area":""}">${esc(value??"")}</textarea></label>`;
+}
+
+function toggleField(label,id,checked,hint=""){
+  return `<label class="wide check-field"><input id="${id}" type="checkbox" ${checked?"checked":""}><span><strong>${esc(label)}</strong>${hint?`<small class="field-hint">${esc(hint)}</small>`:""}</span></label>`;
+}
+
+function sectionHeading(title,description){
+  return `<div class="form-section"><strong>${esc(title)}</strong><span>${esc(description)}</span></div>`;
 }
 
 async function saveSettings(){
+  let compatibility;
+  try{
+    compatibility=JSON.parse($("#settingsOpenAICompatibility").value.trim()||"[]");
+    if(!Array.isArray(compatibility))throw new Error("必须是 JSON 数组");
+  }catch(error){
+    toast("OpenAI Compatibility JSON 无效："+error.message);
+    return;
+  }
   const payload={
-    port:Number($("#settingsPort").value),global_concurrency:Number($("#settingsGlobalConcurrency").value),
-    account_concurrency:Number($("#settingsAccountConcurrency").value),request_timeout_seconds:Number($("#settingsRequestTimeout").value),
-    temporary_url_ttl_seconds:Number($("#settingsTempTTL").value),log_retention_days:Number($("#settingsLogRetention").value),
-    refresh_interval_minutes:Number($("#settingsRefreshInterval").value),public_base_url:$("#settingsPublicBaseURL").value,
-    default_upstream_model:$("#settingsUpstreamModel").value,proxy_url:$("#settingsProxyURL").value,
-    sentinel_browser_path:$("#settingsBrowserPath").value,sentinel_timezone:$("#settingsTimezone").value,
+    host:$("#settingsHost").value,port:Number($("#settingsPort").value),
+    debug:$("#settingsDebug").checked,usage_statistics_enabled:$("#settingsUsageStatistics").checked,
+    logging_to_file:$("#settingsLoggingToFile").checked,refresh_interval_minutes:Number($("#settingsRefreshInterval").value),
+    global_concurrency:Number($("#settingsGlobalConcurrency").value),account_concurrency:Number($("#settingsAccountConcurrency").value),
+    request_timeout_seconds:Number($("#settingsRequestTimeout").value),temporary_url_ttl_seconds:Number($("#settingsTempTTL").value),
+    image_poll_timeout_seconds:Number($("#settingsPollTimeout").value),image_poll_interval_seconds:Number($("#settingsPollInterval").value),
+    image_queue_size:Number($("#settingsQueueSize").value),log_retention_days:Number($("#settingsLogRetention").value),
+    max_upload_bytes:Number($("#settingsMaxUploadBytes").value),max_image_bytes:Number($("#settingsMaxImageBytes").value),
+    max_image_pixels:Number($("#settingsMaxImagePixels").value),max_dimension:Number($("#settingsMaxDimension").value),
     auto_remove_invalid_accounts:$("#settingsAutoRemoveInvalid").checked,
+    parallel_generation:$("#settingsParallelGeneration").checked,account_refresh_workers:Number($("#settingsAccountRefreshWorkers").value),
+    text_cache_entries:Number($("#settingsTextCacheEntries").value),metrics_mode:$("#settingsMetricsMode").value,
+    quota_switch_account:$("#settingsQuotaSwitchAccount").checked,quota_switch_model:$("#settingsQuotaSwitchModel").checked,
+    public_base_url:$("#settingsPublicBaseURL").value,proxy_url:$("#settingsProxyURL").value,
+    provider_base_url:$("#settingsProviderBaseURL").value,image_generation_model:$("#settingsImageGenerationModel").value,
+    default_upstream_model:$("#settingsUpstreamModel").value,default_thinking_effort:$("#settingsThinkingEffort").value,
+    sentinel_browser_path:$("#settingsBrowserPath").value,sentinel_timezone:$("#settingsTimezone").value,
+    sentinel_refresh_minutes:Number($("#settingsSentinelRefresh").value),sentinel_navigate_timeout_seconds:Number($("#settingsSentinelNavigate").value),
+    sentinel_solve_timeout_seconds:Number($("#settingsSentinelSolve").value),sentinel_headless:$("#settingsSentinelHeadless").checked,
+    sentinel_no_sandbox:$("#settingsSentinelNoSandbox").checked,cors_allowed_origins:$("#settingsCORSOrigins").value.split(/\r?\n/).map((item)=>item.trim()).filter(Boolean),
     sensitive_words:$("#settingsSensitiveWords").value.split(/\r?\n/).map((item)=>item.trim()).filter(Boolean),
+    max_request_body_bytes:Number($("#settingsMaxRequestBody").value),openai_compatibility:compatibility,
     management_key:$("#settingsManagementKey").value
   };
   await actionButton($("#saveSettings"),"保存中",async()=>{

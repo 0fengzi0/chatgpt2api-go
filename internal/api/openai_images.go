@@ -254,7 +254,10 @@ func (s *Server) normalizeImageOptions(input imageOptionsInput) (imageOptions, *
 			(cfg.Image.MaxImagePixels > 0 && int64(width)*int64(height) > cfg.Image.MaxImagePixels) {
 			return imageOptions{}, &openAIError{
 				Status: http.StatusBadRequest, Param: "size", Code: "invalid_value",
-				Message: "size exceeds configured dimension limits",
+				Message: fmt.Sprintf(
+					"size %s exceeds configured dimension limits (max-edge=%d, max-pixels=%d)",
+					size, cfg.Image.MaxDimension, cfg.Image.MaxImagePixels,
+				),
 			}
 		}
 	}

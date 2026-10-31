@@ -21,8 +21,10 @@ import (
 )
 
 const (
-	DefaultConfigPath = "config.yaml"
-	DefaultDataDir    = "./data"
+	DefaultConfigPath              = "config.yaml"
+	DefaultDataDir                 = "./data"
+	MinimumSupportedImagePixels    = int64(8_294_400)
+	MinimumSupportedImageDimension = 3840
 )
 
 type APIKey struct {
@@ -237,10 +239,10 @@ func (c *Config) Normalize() {
 	if c.Image.MaxImageBytes < 1 {
 		c.Image.MaxImageBytes = 20 * 1024 * 1024
 	}
-	if c.Image.MaxImagePixels < 1 {
+	if c.Image.MaxImagePixels < MinimumSupportedImagePixels {
 		c.Image.MaxImagePixels = 16 * 1024 * 1024
 	}
-	if c.Image.MaxDimension < 256 {
+	if c.Image.MaxDimension < MinimumSupportedImageDimension {
 		c.Image.MaxDimension = 4096
 	}
 	if c.Image.LogRetentionDays < 1 {
@@ -254,6 +256,15 @@ func (c *Config) Normalize() {
 	}
 	if c.Performance.AccountRefreshWorkers < 1 {
 		c.Performance.AccountRefreshWorkers = 1
+	}
+	if c.Performance.TextCacheEntries < 0 {
+		c.Performance.TextCacheEntries = 0
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Performance.MetricsMode)) {
+	case "light", "full", "off":
+		c.Performance.MetricsMode = strings.ToLower(strings.TrimSpace(c.Performance.MetricsMode))
+	default:
+		c.Performance.MetricsMode = "light"
 	}
 	c.ProxyURL = strings.TrimSpace(c.ProxyURL)
 	words := c.SensitiveWords[:0]
@@ -286,6 +297,22 @@ func (c *Config) Normalize() {
 	c.CORS.AllowedOrigins = origins
 	if c.MaxRequestBodyBytes < 1 {
 		c.MaxRequestBodyBytes = 105 * 1024 * 1024
+	}
+	c.ProviderBaseURL = strings.TrimSpace(c.ProviderBaseURL)
+	if c.ProviderBaseURL == "" {
+		c.ProviderBaseURL = "https://chatgpt.com"
+	}
+	c.ImageGenerationModel = strings.TrimSpace(c.ImageGenerationModel)
+	if c.ImageGenerationModel == "" {
+		c.ImageGenerationModel = "gpt-image-2"
+	}
+	c.DefaultUpstreamModel = strings.TrimSpace(c.DefaultUpstreamModel)
+	if c.DefaultUpstreamModel == "" {
+		c.DefaultUpstreamModel = "gpt-5-5"
+	}
+	c.DefaultThinkingEffort = strings.ToLower(strings.TrimSpace(c.DefaultThinkingEffort))
+	if c.DefaultThinkingEffort == "" {
+		c.DefaultThinkingEffort = "auto"
 	}
 	for i := range c.APIKeys {
 		if c.APIKeys[i].Name == "" {
@@ -327,8 +354,12 @@ func loadYAML(path string) (*Config, []string, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, nil, err
 	}
+	beforeMaxImagePixels := cfg.Image.MaxImagePixels
+	beforeMaxDimension := cfg.Image.MaxDimension
 	applyEnvOverrides(&cfg)
 	cfg.Normalize()
+	upgradedImageLimits := cfg.Image.MaxImagePixels != beforeMaxImagePixels ||
+		cfg.Image.MaxDimension != beforeMaxDimension
 	generated, changed, err := ensureSecrets(&cfg)
 	if err != nil {
 		return nil, nil, err
@@ -336,7 +367,7 @@ func loadYAML(path string) (*Config, []string, error) {
 	if err := os.MkdirAll(cfg.DataDirPath(), 0o755); err != nil {
 		return nil, nil, err
 	}
-	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) || changed || len(generated) > 0 {
+	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) || changed || upgradedImageLimits || len(generated) > 0 {
 		if err := SaveYAML(path, &cfg); err != nil {
 			return nil, nil, err
 		}
@@ -358,8 +389,12 @@ func loadJSON(path string) (*Config, []string, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, nil, err
 	}
+	beforeMaxImagePixels := cfg.Image.MaxImagePixels
+	beforeMaxDimension := cfg.Image.MaxDimension
 	applyEnvOverrides(&cfg)
 	cfg.Normalize()
+	upgradedImageLimits := cfg.Image.MaxImagePixels != beforeMaxImagePixels ||
+		cfg.Image.MaxDimension != beforeMaxDimension
 	generated, changed, err := ensureSecrets(&cfg)
 	if err != nil {
 		return nil, nil, err
@@ -367,7 +402,7 @@ func loadJSON(path string) (*Config, []string, error) {
 	if err := os.MkdirAll(cfg.DataDirPath(), 0o755); err != nil {
 		return nil, nil, err
 	}
-	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) || changed || len(generated) > 0 {
+	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) || changed || upgradedImageLimits || len(generated) > 0 {
 		if err := SaveJSON(path, &cfg); err != nil {
 			return nil, nil, err
 		}

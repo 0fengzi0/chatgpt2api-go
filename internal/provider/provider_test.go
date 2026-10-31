@@ -27,3 +27,11 @@ func TestBuildImagePromptIncludesSizeAndQuality(t *testing.T) {
 		t.Fatalf("prompt = %q, want %q", got, want)
 	}
 }
+
+func TestBuildImagePromptSkipsAutoSize(t *testing.T) {
+	got := buildImagePrompt("keep the source ratio", "auto", "high")
+	want := "keep the source ratio\n\n输出图片质量为 high。"
+	if got != want {
+		t.Fatalf("prompt = %q, want %q", got, want)
+	}
+}

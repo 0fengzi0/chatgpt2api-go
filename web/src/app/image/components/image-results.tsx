@@ -314,10 +314,14 @@ export function ImageResults({
                                 "overflow-hidden rounded-xl border border-rose-200 bg-rose-50",
                                 "aspect-square",
                                 turn.ratio === "1:1" && "sm:aspect-square",
+                                turn.ratio === "3:2" && "sm:aspect-[3/2]",
+                                turn.ratio === "2:3" && "sm:aspect-[2/3]",
                                 turn.ratio === "16:9" && "sm:aspect-video",
                                 turn.ratio === "9:16" && "sm:aspect-[9/16]",
                                 turn.ratio === "4:3" && "sm:aspect-[4/3]",
                                 turn.ratio === "3:4" && "sm:aspect-[3/4]",
+                                turn.ratio === "21:9" && "sm:aspect-[21/9]",
+                                turn.ratio === "9:21" && "sm:aspect-[9/21]",
                               )}
                             >
                             <div className="flex h-full min-h-16 flex-col items-center justify-center gap-1.5 px-2 py-2 text-center text-[11px] leading-4 text-rose-600 sm:gap-3 sm:px-6 sm:py-8 sm:text-sm sm:leading-6">
@@ -370,10 +374,14 @@ export function ImageResults({
                             className={cn(
                               "overflow-hidden rounded-xl border border-stone-200/80 bg-stone-100/80 relative",
                               turn.ratio === "1:1" && "aspect-square",
+                              turn.ratio === "3:2" && "aspect-[3/2]",
+                              turn.ratio === "2:3" && "aspect-[2/3]",
                               turn.ratio === "16:9" && "aspect-video",
                               turn.ratio === "9:16" && "aspect-[9/16]",
                               turn.ratio === "4:3" && "aspect-[4/3]",
                               turn.ratio === "3:4" && "aspect-[3/4]",
+                              turn.ratio === "21:9" && "aspect-[21/9]",
+                              turn.ratio === "9:21" && "aspect-[9/21]",
                             )}
                           >
                           <div className="flex h-full flex-col items-center justify-center gap-1.5 px-2 py-3 text-center text-stone-500 sm:gap-3 sm:px-6 sm:py-8">

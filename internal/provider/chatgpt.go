@@ -273,8 +273,8 @@ func detectImageMIME(data []byte) string {
 func buildImagePrompt(prompt, size, quality string) string {
 	prompt = strings.TrimSpace(prompt)
 	hints := ""
-	if strings.TrimSpace(size) != "" {
-		hints += "输出图片尺寸为 " + strings.TrimSpace(size) + "。"
+	if size = strings.TrimSpace(size); size != "" && !strings.EqualFold(size, "auto") {
+		hints += "输出图片尺寸为 " + size + "。"
 	}
 	if strings.TrimSpace(quality) != "" {
 		hints += "输出图片质量为 " + strings.TrimSpace(quality) + "。"
