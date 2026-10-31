@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from threading import Event, Thread
 
 from fastapi import HTTPException, Request
@@ -8,10 +7,6 @@ from fastapi import HTTPException, Request
 from services.account_service import account_service
 from services.auth_service import auth_service
 from services.config import config
-
-BASE_DIR = Path(__file__).resolve().parents[1]
-WEB_DIST_DIR = BASE_DIR / "web_dist"
-
 
 def extract_bearer_token(authorization: str | None) -> str:
     scheme, _, value = str(authorization or "").partition(" ")
@@ -112,23 +107,3 @@ def start_limited_account_watcher(stop_event: Event) -> Thread:
     thread = Thread(target=worker, name="account-watcher", daemon=True)
     thread.start()
     return thread
-
-
-def resolve_web_asset(requested_path: str) -> Path | None:
-    if not WEB_DIST_DIR.exists():
-        return None
-    clean_path = requested_path.strip("/")
-    base_dir = WEB_DIST_DIR.resolve()
-    candidates = [base_dir / "index.html"] if not clean_path else [
-        base_dir / Path(clean_path),
-        base_dir / clean_path / "index.html",
-        base_dir / f"{clean_path}.html",
-    ]
-    for candidate in candidates:
-        try:
-            candidate.resolve().relative_to(base_dir)
-        except ValueError:
-            continue
-        if candidate.is_file():
-            return candidate
-    return None

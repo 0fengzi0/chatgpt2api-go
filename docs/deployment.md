@@ -1,6 +1,6 @@
 # 部署与升级指南
 
-> 本文描述原 Python + Next.js 版本。Go 生图网关的部署方式见
+> 本文描述原 Python 版本。Go 生图网关的部署方式见
 > [deploy/README.md](../deploy/README.md)。
 
 本文介绍 ChatGPT2API 的常见部署方式，以及后续升级项目时需要保留的数据和执行步骤。
@@ -145,14 +145,6 @@ uv sync
 uv run main.py
 ```
 
-前端开发服务：
-
-```bash
-cd web
-bun install
-bun run dev
-```
-
 源码方式运行时，后端默认读取项目根目录的 `config.json` 和 `data/`。
 
 ## 存储后端
@@ -270,14 +262,6 @@ docker logs -f chatgpt2api-warp
 cd chatgpt2api
 git pull
 uv sync
-```
-
-如果需要重新构建前端静态产物：
-
-```bash
-cd web
-bun install
-bun run build
 ```
 
 然后按你的进程管理方式重启后端服务。

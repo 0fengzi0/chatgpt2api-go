@@ -1,7 +1,7 @@
 <h1 align="center">ChatGPT2API</h1>
 
 
-<p align="center">ChatGPT2API 主要是对 ChatGPT 官网相关能力进行逆向整理与封装，提供面向 ChatGPT 图片生成、图片编辑、多图组图编辑场景的 OpenAI 兼容图片 API / 代理，并集成在线画图、号池管理、多种账号导入方式与 Docker 自托管部署能力。</p>
+<p align="center">ChatGPT2API 主要是对 ChatGPT 官网相关能力进行逆向整理与封装，提供面向 ChatGPT 图片生成、图片编辑场景的 OpenAI 兼容图片 API / 代理，并集成号池管理、多种账号导入方式与 Docker 自托管部署能力。</p>
 
 > [!WARNING]
 > 免责声明：
@@ -41,7 +41,7 @@ docker compose up -d
 
 启动前请先在 `config.json` 中设置 `auth-key`，也可以在 `docker-compose.yml` 中通过 `CHATGPT2API_AUTH_KEY` 覆盖。
 
-- Web 面板：`http://localhost:3000`
+- 管理控制台：`http://localhost:3000/admin/`
 - API 地址：`http://localhost:3000/v1`
 - 数据目录：`./data`
 
@@ -75,14 +75,6 @@ git clone git@github.com:basketikun/chatgpt2api.git
 cd chatgpt2api
 uv sync
 uv run main.py
-```
-
-启动前端：
-
-```bash
-cd chatgpt2api/web
-bun install
-bun run dev
 ```
 
 后续更新新版本：
@@ -126,17 +118,6 @@ environment:
 - 支持生成可编辑 PSD 文件
 - 支持 Codex 中的画图接口逆向，仅 `Plus` / `Team` / `Pro` 订阅可用，模型别名为 `codex-gpt-image-2`，如有需要可自行在其他场景映射回
   `gpt-image-2`，用于和官网画图区分；也就意味着同一账号会同时有官网和 Codex 两份生图额度
-
-### 在线画图功能
-
-- 内置在线画图工作台，支持生成、图片编辑与多图组图编辑
-- 支持 `gpt-image-2`、`codex-gpt-image-2`、`auto`、`gpt-5`、`gpt-5-1`、`gpt-5-2`、`gpt-5-3`、`gpt-5-3-mini`、`gpt-5-mini` 模型选择
-- 编辑模式支持参考图上传
-- 前端支持多图生成交互
-- 本地保存图片会话历史，支持回看、删除和清空
-- 支持服务端缓存图片URL
-- 图片生成进度追踪，超时后可继续等待
-- 图片懒加载与滚动位置记忆，优化大量图片场景性能
 
 ### 号池管理功能
 
